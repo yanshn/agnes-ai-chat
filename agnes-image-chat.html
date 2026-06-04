@@ -108,13 +108,6 @@
     border-radius: 4px; background: var(--bg-input); color: var(--text-primary);
     font-size: 13px; font-family: inherit; outline: none;
   }
-  .conv-item .conv-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; margin-left: auto; flex-shrink: 0; }
-  .conv-item:hover .conv-actions { opacity: 1; }
-  .conv-item .conv-actions button {
-    background: none; border: none; color: var(--text-muted);
-    cursor: pointer; font-size: 12px; padding: 2px 4px; border-radius: 4px;
-  }
-  .conv-item .conv-actions button:hover { color: var(--error); background: rgba(224,85,106,0.1); }
 
   .no-convs {
     padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;
@@ -172,14 +165,6 @@
   .sidebar-hint a { color: var(--accent); text-decoration: none; }
   .sidebar-hint a:hover { text-decoration: underline; }
 
-  .btn-delete-conv {
-    width: 100%; padding: 6px;
-    background: transparent; border: 1px solid var(--border);
-    border-radius: var(--radius-sm); color: var(--text-muted);
-    cursor: pointer; font-size: 11px; transition: var(--transition);
-  }
-  .btn-delete-conv:hover { border-color: var(--error); color: var(--error); }
-
   /* ===== Main ===== */
   .main {
     flex: 1; display: flex; flex-direction: column; min-width: 0;
@@ -190,6 +175,10 @@
     color: var(--text-secondary); display: flex; align-items: center; gap: 8px;
     flex-shrink: 0;
   }
+  .header-actions {
+    margin-left: auto; display: flex; gap: 6px; flex-shrink: 0;
+  }
+  .header-actions button:hover { color: var(--accent); border-color: var(--accent); }
   .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
   .status-dot.offline { background: var(--text-muted); }
   .status-dot.loading { background: #e8a838; animation: pulse 1.2s ease-in-out infinite; }
@@ -415,7 +404,6 @@
       &#x1f4a1; 输入参考图 URL 自动切换<strong>图生图</strong>模式。API 免费，在
       <a href="https://platform.agnes-ai.com/" target="_blank">Agnes Platform</a> 获取 Key。
     </div>
-    <button class="btn-delete-conv" id="btnDeleteConv">&#x1f5d1; 删除当前对话</button>
   </div>
 </aside>
 
@@ -425,7 +413,11 @@
     <span class="status-dot" id="statusDot"></span>
     <span id="statusText">Agnes-Image-2.0-Flash 就绪</span>
     <span style="margin:0 8px;color:var(--text-muted);">|</span>
-    <span id="convNameDisplay" style="color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px;">—</span>
+    <span id="convNameDisplay" style="color:var(--text-primary);">—</span>
+    <div class="header-actions">
+      <button id="btnRenameConv" title="重命名当前对话" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 10px;border-radius:4px;font-size:12px;transition:var(--transition);">&#x270f; 重命名</button>
+      <button id="btnDeleteCurrConv" title="删除当前对话" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 10px;border-radius:4px;font-size:12px;transition:var(--transition);">&#x1f5d1; 删除</button>
+    </div>
   </div>
   <div class="chat-messages" id="chatMessages"></div>
   <div class="input-area">
@@ -650,10 +642,6 @@ function renderConvList() {
           <div class="conv-name">${name}</div>
           <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${escapeHtml(sub)}</div>
         </div>
-        <div class="conv-actions">
-          <button onclick="event.stopPropagation();startRename('${c.id}')" title="重命名">&#x270f;</button>
-          <button onclick="event.stopPropagation();deleteConversation('${c.id}')" title="删除">&#x1f5d1;</button>
-        </div>
       </div>`;
   }).join('');
 }
@@ -678,6 +666,33 @@ function startRename(id) {
     } else {
       renderConvList();
     }
+  };
+
+  input.addEventListener('blur', finish);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') {
+      input.value = oldName;
+      input.blur();
+    }
+  });
+}
+
+function startHeaderRename() {
+  const conv = getCurrentConv();
+  if (!conv) return;
+  const oldName = conv.name;
+  $convNameDisp.innerHTML = `<input value="${escapeHtml(oldName)}" style="padding:2px 8px;border:1px solid var(--accent);border-radius:4px;background:var(--bg-input);color:var(--text-primary);font-size:14px;font-family:inherit;outline:none;width:300px;" />`;
+  const input = $convNameDisp.querySelector('input');
+  input.focus();
+  input.select();
+
+  const finish = async () => {
+    const newName = input.value.trim();
+    if (newName && newName !== oldName) {
+      await renameConversation(currentConvId, newName);
+    }
+    updateConvNameDisplay();
   };
 
   input.addEventListener('blur', finish);
@@ -728,8 +743,11 @@ async function init() {
   });
 
   document.getElementById('btnNewConv').addEventListener('click', () => createConversation(true));
-  document.getElementById('btnDeleteConv').addEventListener('click', () => {
+  document.getElementById('btnDeleteCurrConv').addEventListener('click', () => {
     if (currentConvId) deleteConversation(currentConvId);
+  });
+  document.getElementById('btnRenameConv').addEventListener('click', () => {
+    if (currentConvId) startHeaderRename();
   });
 
   $refUrlInput.addEventListener('keydown', (e) => {
