@@ -270,6 +270,27 @@
   .bubble.error { background: rgba(224,85,106,0.1); border: 1px solid var(--error); }
   .bubble.error .msg-text { color: var(--error); font-size: 13px; }
 
+  /* Video task */
+  .video-task { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .video-progress-bar {
+    width: 100%; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden;
+  }
+  .video-progress-fill {
+    height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.5s;
+  }
+  .btn-video-refresh {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border: 1px solid var(--accent); border-radius: var(--radius-sm);
+    background: rgba(78,168,222,0.1); color: var(--accent);
+    cursor: pointer; font-size: 12px; transition: var(--transition);
+  }
+  .btn-video-refresh:hover { background: rgba(78,168,222,0.2); }
+  .btn-video-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+  .video-player {
+    max-width: 480px; border-radius: var(--radius-sm); overflow: hidden; background: #000;
+  }
+  .video-player video { width: 100%; display: block; }
+
   /* Input */
   .input-area {
     padding: 16px 24px; border-top: 1px solid var(--border);
@@ -348,6 +369,35 @@
     0%,80%,100% { transform: translateY(0); }
     40% { transform: translateY(-8px); }
   }
+
+  /* ===== Mobile ===== */
+  .menu-btn { display: none; background: none; border: none; color: var(--text-secondary); font-size: 20px; cursor: pointer; padding: 0 6px; line-height: 1; }
+  .menu-btn:hover { color: var(--accent); }
+  .sidebar-close-btn { display: none; background: none; border: none; color: var(--text-muted); font-size: 22px; cursor: pointer; padding: 0 4px; margin-left: auto; line-height: 1; }
+  .sidebar-close-btn:hover { color: var(--error); }
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 199; }
+  .overlay.show { display: block; }
+
+  @media (max-width: 767px) {
+    .sidebar {
+      position: fixed; left: -280px; top: 0; bottom: 0; z-index: 200;
+      width: 280px; min-width: 280px; transition: left 0.3s ease; box-shadow: none;
+    }
+    .sidebar.open { left: 0; box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
+    .menu-btn { display: block; }
+    .sidebar-close-btn { display: block; }
+    .header-actions button { padding: 4px 6px; font-size: 11px; }
+    .chat-header { padding: 12px 14px; gap: 6px; }
+    .chat-header #convNameDisplay { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chat-messages { padding: 12px; gap: 14px; }
+    .input-area { padding: 10px 12px; gap: 8px; }
+    .input-wrapper textarea { font-size: 13px; padding: 10px 12px; }
+    .ref-url-row input[type="text"] { width: 180px; }
+    .bubble { max-width: 90%; padding: 12px 14px; }
+    .bubble .ref-images img { max-width: 100px; max-height: 70px; }
+    .bubble .gen-image { max-width: 240px; max-height: 240px; }
+    .btn-send { width: 40px; height: 40px; }
+  }
 </style>
 </head>
 <body>
@@ -357,6 +407,7 @@
   <div class="sidebar-logo">
     <svg viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="currentColor" opacity="0.15"/><circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="14" r="2" fill="currentColor"/><circle cx="20" cy="14" r="2" fill="currentColor"/><path d="M10 20c2-3 6-3 8-3s6 0 8 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     Agnes AI 图像工坊
+    <button class="sidebar-close-btn" id="btnCloseSidebar" title="关闭菜单">&times;</button>
   </div>
 
   <!-- 对话列表 -->
@@ -388,6 +439,34 @@
         <option value="agnes-video-v2.0">Agnes-Video-V2.0</option>
       </select>
     </div>
+    <!-- 视频参数（仅视频模型时显示） -->
+    <div id="videoSettings" style="display:none">
+      <div class="sidebar-section">
+        <label class="sidebar-label">视频分辨率</label>
+        <select id="videoRes">
+          <option value="1152x768" selected>1152 x 768（横版）</option>
+          <option value="768x1152">768 x 1152（竖版）</option>
+          <option value="1024x576">1024 x 576（16:9）</option>
+        </select>
+      </div>
+      <div class="sidebar-section">
+        <label class="sidebar-label">帧数 (num_frames)</label>
+        <select id="numFrames">
+          <option value="81">81（~3.4s）</option>
+          <option value="121" selected>121（~5s）</option>
+          <option value="161">161（~6.7s）</option>
+          <option value="241">241（~10s）</option>
+        </select>
+      </div>
+      <div class="sidebar-section">
+        <label class="sidebar-label">帧率 (frame_rate)</label>
+        <select id="frameRate">
+          <option value="12">12 fps</option>
+          <option value="24" selected>24 fps</option>
+          <option value="30">30 fps</option>
+        </select>
+      </div>
+    </div>
     <div class="sidebar-section">
       <label class="sidebar-label">输出尺寸</label>
       <select id="sizeSelect">
@@ -410,6 +489,7 @@
 <!-- ===== Main ===== -->
 <main class="main">
   <div class="chat-header">
+    <button class="menu-btn" id="btnMenu" title="菜单">&#9776;</button>
     <span class="status-dot" id="statusDot"></span>
     <span id="statusText">Agnes-Image-2.0-Flash 就绪</span>
     <span style="margin:0 8px;color:var(--text-muted);">|</span>
@@ -435,6 +515,7 @@
 </main>
 
 <div class="lightbox" id="lightbox"><img id="lightboxImg" src="" alt="放大查看"></div>
+<div class="overlay" id="overlay"></div>
 
 <script>
 // ==================== IndexedDB ====================
@@ -486,8 +567,8 @@ async function dbDelete(id) {
 
 // ==================== State ====================
 const CONFIG = {
-  endpoint: 'https://apihub.agnes-ai.com/v1/images/generations',
-  model: 'agnes-image-2.0-flash',
+  imageEndpoint: 'https://apihub.agnes-ai.com/v1/images/generations',
+  videoEndpoint: 'https://apihub.agnes-ai.com/v1/videos',
 };
 
 let conversations = [];      // [{ id, name, messages, createdAt, updatedAt }]
@@ -575,6 +656,8 @@ async function switchConversation(id) {
   updateConvNameDisplay();
   updateStatus();
   scrollToBottom();
+  // 移动端切换对话后自动关闭侧边栏
+  if (window.innerWidth < 768) toggleSidebar(false);
 }
 
 function updateConvNameDisplay() {
@@ -742,7 +825,20 @@ async function init() {
     arrow.innerHTML = panel.classList.contains('open') ? '&#9660;' : '&#9654;';
   });
 
+  // 模型切换时显示/隐藏视频参数区
+  document.getElementById('modelSelect').addEventListener('change', () => {
+    const isVideo = document.getElementById('modelSelect').value === 'agnes-video-v2.0';
+    document.getElementById('videoSettings').style.display = isVideo ? 'block' : 'none';
+    $promptInput.placeholder = isVideo
+      ? '描述你想要生成的视频：主体、动作、场景、镜头运动、光照、风格……\n提示：按 Ctrl+Enter 发送'
+      : '描述你想要生成的图像，或用自然语言描述如何编辑参考图……\n提示：按 Ctrl+Enter 发送';
+  });
+
   document.getElementById('btnNewConv').addEventListener('click', () => createConversation(true));
+  // 移动端侧边栏开关
+  document.getElementById('btnMenu').addEventListener('click', () => { toggleSidebar(true); });
+  document.getElementById('btnCloseSidebar').addEventListener('click', () => { toggleSidebar(false); });
+  document.getElementById('overlay').addEventListener('click', () => { toggleSidebar(false); });
   document.getElementById('btnDeleteCurrConv').addEventListener('click', () => {
     if (currentConvId) deleteConversation(currentConvId);
   });
@@ -835,7 +931,28 @@ function updateStatus() {
 
 // ==================== Send ====================
 function buildRequestBody(prompt, imageUrls) {
-  const body = { model: document.getElementById('modelSelect').value, prompt, size: $sizeSelect.value, extra_body: { response_format: 'url' } };
+  const model = document.getElementById('modelSelect').value;
+
+  if (model === 'agnes-video-v2.0') {
+    // 视频请求体
+    const res = document.getElementById('videoRes').value.split('x');
+    const body = {
+      model, prompt,
+      width: parseInt(res[0]),
+      height: parseInt(res[1]),
+      num_frames: parseInt(document.getElementById('numFrames').value),
+      frame_rate: parseInt(document.getElementById('frameRate').value),
+    };
+    const seedVal = $seedInput.value.trim();
+    if (seedVal) body.seed = parseInt(seedVal, 10);
+    if (imageUrls && imageUrls.length > 0) {
+      body.image = imageUrls.length === 1 ? imageUrls[0] : imageUrls;
+    }
+    return body;
+  }
+
+  // 图片请求体（原有逻辑）
+  const body = { model, prompt, size: $sizeSelect.value, extra_body: { response_format: 'url' } };
   const seedVal = $seedInput.value.trim();
   if (seedVal) body.seed = parseInt(seedVal, 10);
   if (imageUrls && imageUrls.length > 0) {
@@ -866,7 +983,7 @@ async function sendMessage() {
   const userRefs = [...refUrls];
   const reqBody = buildRequestBody(prompt, userRefs);
   const reqBodyStr = JSON.stringify(reqBody, null, 2);
-  await addMessageToConv(sourceConvId, 'user', prompt, false, userRefs, [], { requestBody: reqBodyStr });
+  await addMessageToConv(sourceConvId, 'user', prompt, false, userRefs, [], { requestBody: reqBodyStr, _endpoint: getEndpoint() });
 
   // 首次发言自动命名
   const conv = conversations.find(c => c.id === sourceConvId);
@@ -886,29 +1003,71 @@ async function sendMessage() {
   try {
     const result = await callAgnesAPI(prompt, userRefs);
     setConvState(sourceConvId, 'idle');
-    const imgArray = result.data?.data;
-    if (imgArray && imgArray.length > 0) {
-      const genUrls = imgArray.map(i => i.url).filter(Boolean);
-      const count = genUrls.length;
-      const text = count > 1 ? `\u2705 已为你生成 ${count} 张图像：` : '\u2705 已为你生成图像：';
-      await addMessageToConv(sourceConvId, 'ai', text, false, [], genUrls, { requestBody: result.requestBody, responseBody: result.responseBody });
+
+    const isVideo = document.getElementById('modelSelect').value === 'agnes-video-v2.0';
+
+    if (isVideo) {
+      // 视频模型：返回 task_id
+      const taskId = result.data?.task_id;
+      if (taskId) {
+        await addMessageToConv(sourceConvId, 'ai', '\u2705 视频任务已提交', false, [], [], {
+          requestBody: result.requestBody,
+          responseBody: result.responseBody,
+          _endpoint: getEndpoint(),
+          videoTaskId: taskId,
+          videoStatus: 'queued',
+          videoProgress: 0,
+        });
+        // 30 秒后自动开始轮询
+        const conv2 = conversations.find(c => c.id === sourceConvId);
+        if (conv2) {
+          const idx2 = conv2.messages.length - 1;
+          const msg2 = conv2.messages[idx2];
+          if (msg2.apiBodies) {
+            msg2.apiBodies._autoTimer = setTimeout(() => {
+              refreshVideoTask(sourceConvId, idx2, taskId);
+            }, 30000);
+          }
+        }
+      } else {
+        await addMessageToConv(sourceConvId, 'ai', '\u26a0\ufe0f 视频任务创建失败，未返回 task_id', true, [], [], {
+          requestBody: result.requestBody,
+          responseBody: result.responseBody,
+          _endpoint: getEndpoint(),
+        });
+      }
     } else {
-      await addMessageToConv(sourceConvId, 'ai', '\u26a0\ufe0f API 返回了空结果。', true, [], [], { requestBody: result.requestBody, responseBody: result.responseBody });
+      // 图片模型：原有逻辑
+      const imgArray = result.data?.data;
+      if (imgArray && imgArray.length > 0) {
+        const genUrls = imgArray.map(i => i.url).filter(Boolean);
+        const count = genUrls.length;
+        const text = count > 1 ? `\u2705 已为你生成 ${count} 张图像：` : '\u2705 已为你生成图像：';
+        await addMessageToConv(sourceConvId, 'ai', text, false, [], genUrls, { requestBody: result.requestBody, responseBody: result.responseBody, _endpoint: getEndpoint() });
+      } else {
+        await addMessageToConv(sourceConvId, 'ai', '\u26a0\ufe0f API 返回了空结果。', true, [], [], { requestBody: result.requestBody, responseBody: result.responseBody, _endpoint: getEndpoint() });
+      }
     }
   } catch (err) {
     setConvState(sourceConvId, 'error');
     const errMsg = err.message || '未知错误';
-    await addMessageToConv(sourceConvId, 'ai', `\u274c 生成失败：${escapeHtml(errMsg)}`, true, [], [], { requestBody: err.requestBody || '', responseBody: err.responseBody || escapeHtml(errMsg) });
+    await addMessageToConv(sourceConvId, 'ai', `\u274c 生成失败：${escapeHtml(errMsg)}`, true, [], [], { requestBody: err.requestBody || '', responseBody: err.responseBody || escapeHtml(errMsg), _endpoint: getEndpoint() });
   } finally {
     isGenerating = false;
     $btnSend.disabled = false;
   }
 }
 
+function getEndpoint() {
+  return document.getElementById('modelSelect').value === 'agnes-video-v2.0'
+    ? CONFIG.videoEndpoint : CONFIG.imageEndpoint;
+}
+
 async function callAgnesAPI(prompt, imageUrls) {
   const body = buildRequestBody(prompt, imageUrls);
   const requestBodyStr = JSON.stringify(body, null, 2);
-  const resp = await fetch(CONFIG.endpoint, {
+  const endpoint = getEndpoint();
+  const resp = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -961,6 +1120,76 @@ function removeTypingIndicator(id) {
   if (el) el.remove();
 }
 
+function buildBubbleContent(msg) {
+  const isUser = msg.role === 'user';
+  let html = '';
+
+  if (msg.refImages && msg.refImages.length > 0) {
+    html += '<div class="ref-images">';
+    msg.refImages.forEach(url => {
+      html += `<img src="${escapeHtml(url)}" alt="参考图" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+    });
+    html += '</div>';
+  }
+
+  html += `<div class="msg-text">${msg.text}</div>`;
+
+  if (msg.genImages && msg.genImages.length > 0) {
+    html += '<div class="gen-image-wrapper"><span class="gen-label">&#x1f5bc; 生成结果</span>';
+    msg.genImages.forEach(url => {
+      html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+    });
+    html += '</div>';
+  }
+
+  if (msg.apiBodies) {
+    if (isUser && msg.apiBodies.requestBody) {
+      const uid = codeId();
+      html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
+      html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
+    }
+    if (!isUser && msg.apiBodies) {
+      if (msg.apiBodies.requestBody) {
+        const uid = codeId();
+        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
+        html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
+      }
+      if (msg.apiBodies.responseBody) {
+        const uid = codeId();
+        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 响应体 (${msg.apiBodies.responseBody.length} 字符)</button>`;
+        html += `<div class="code-block" id="${uid}"><div class="code-label">${msg.isError ? 'ERROR RESPONSE' : 'RESPONSE'}</div>${escapeHtml(msg.apiBodies.responseBody)}</div>`;
+      }
+    }
+  }
+
+  // 视频任务渲染
+  if (msg.apiBodies && msg.apiBodies.videoTaskId) {
+    const vt = msg.apiBodies;
+    html += '<div class="video-task">';
+    if (vt.videoStatus === 'completed' && vt.videoUrl) {
+      html += `<div class="gen-label">&#x1f3ac; 视频已生成</div>`;
+      html += `<div class="video-player"><video controls src="${escapeHtml(vt.videoUrl)}"></video></div>`;
+    } else if (vt.videoStatus === 'failed') {
+      html += `<div class="msg-text" style="color:var(--error);">&#x274c; 视频生成失败</div>`;
+    } else {
+      const pct = vt.videoProgress || 0;
+      const statusText = vt.videoStatus === 'queued' ? '排队等待中' : '正在生成视频';
+      html += `<div class="msg-text">&#x23f3; ${statusText}（task: ${escapeHtml(vt.videoTaskId.slice(0, 12))}…）</div>`;
+      if (pct > 0) {
+        html += `<div class="video-progress-bar"><div class="video-progress-fill" style="width:${pct}%"></div></div>`;
+        html += `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">进度 ${pct}%</div>`;
+      }
+      html += `<button class="btn-video-refresh" onclick="event.stopPropagation();refreshVideoTask('${msg._convId}',${msg._idx},'${vt.videoTaskId}')">&#x1f504; 刷新状态</button>`;
+      html += `<button class="btn-video-refresh" style="margin-left:6px" onclick="event.stopPropagation();toggleVideoPause('${msg._convId}',${msg._idx})">${vt.videoPaused ? '&#x25b6; 恢复自动刷新' : '&#x23f8; 暂停自动刷新'}</button>`;
+    }
+    html += '</div>';
+  }
+
+  const t = new Date(msg.time);
+  html += `<div class="msg-time">${formatTime(t)}</div>`;
+  return html;
+}
+
 function renderAllMessages() {
   const existingTyping = $chatMessages.querySelector('[id^="typing-"]');
   $chatMessages.innerHTML = '';
@@ -975,55 +1204,18 @@ function renderAllMessages() {
     return;
   }
 
-  msgs.forEach(msg => {
+  msgs.forEach((msg, idx) => {
+    msg._convId = currentConvId;
+    msg._idx = idx;
     const row = document.createElement('div');
     row.className = `message-row ${msg.role}`;
+    row.setAttribute('data-msg-idx', idx);
     const isUser = msg.role === 'user';
     const bubbleClass = `bubble ${msg.role}${msg.isError ? ' error' : ''}`;
 
     let html = `<div class="avatar ${isUser ? 'user-avatar' : 'ai-avatar'}">${isUser ? '&#x1f464;' : '&#x1f916;'}</div>`;
     html += `<div class="${bubbleClass}">`;
-
-    if (msg.refImages && msg.refImages.length > 0) {
-      html += '<div class="ref-images">';
-      msg.refImages.forEach(url => {
-        html += `<img src="${escapeHtml(url)}" alt="参考图" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
-      });
-      html += '</div>';
-    }
-
-    html += `<div class="msg-text">${msg.text}</div>`;
-
-    if (msg.genImages && msg.genImages.length > 0) {
-      html += '<div class="gen-image-wrapper"><span class="gen-label">&#x1f5bc; 生成结果</span>';
-      msg.genImages.forEach(url => {
-        html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
-      });
-      html += '</div>';
-    }
-
-    if (msg.apiBodies) {
-      if (isUser && msg.apiBodies.requestBody) {
-        const uid = codeId();
-        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
-        html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(CONFIG.endpoint)}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
-      }
-      if (!isUser && msg.apiBodies) {
-        if (msg.apiBodies.requestBody) {
-          const uid = codeId();
-          html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
-          html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(CONFIG.endpoint)}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
-        }
-        if (msg.apiBodies.responseBody) {
-          const uid = codeId();
-          html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 响应体 (${msg.apiBodies.responseBody.length} 字符)</button>`;
-          html += `<div class="code-block" id="${uid}"><div class="code-label">${msg.isError ? 'ERROR RESPONSE' : 'RESPONSE'}</div>${escapeHtml(msg.apiBodies.responseBody)}</div>`;
-        }
-      }
-    }
-
-    const t = new Date(msg.time);
-    html += `<div class="msg-time">${formatTime(t)}</div>`;
+    html += buildBubbleContent(msg);
     html += '</div>';
     row.innerHTML = html;
     $chatMessages.appendChild(row);
@@ -1041,6 +1233,85 @@ function renderAllMessages() {
 }
 
 function scrollToBottom() { $chatMessages.scrollTop = $chatMessages.scrollHeight; }
+
+// ==================== Video Polling ====================
+function toggleSidebar(show) {
+  document.getElementById('sidebar').classList.toggle('open', show);
+  document.getElementById('overlay').classList.toggle('show', show);
+}
+
+async function toggleVideoPause(convId, msgIdx) {
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv || !conv.messages[msgIdx] || !conv.messages[msgIdx].apiBodies) return;
+  const msg = conv.messages[msgIdx];
+  msg.apiBodies.videoPaused = !msg.apiBodies.videoPaused;
+  await dbPut(conv);
+  if (convId === currentConvId) renderAllMessages();
+  // 如果恢复自动刷新，立即触发一次
+  if (!msg.apiBodies.videoPaused) {
+    refreshVideoTask(convId, msgIdx, msg.apiBodies.videoTaskId);
+  }
+}
+
+async function refreshVideoTask(convId, msgIdx, taskId) {
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv || !conv.messages[msgIdx]) return;
+  const msg = conv.messages[msgIdx];
+  if (!msg.apiBodies) return;
+
+  try {
+    const resp = await fetch(`${CONFIG.videoEndpoint}/${taskId}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      credentials: 'omit',
+      cache: 'no-store',
+    });
+    const data = await resp.json();
+    const respStr = JSON.stringify(data, null, 2);
+
+    msg.apiBodies.videoStatus = data.status;
+    msg.apiBodies.videoProgress = data.progress || 0;
+    // 更新请求/响应体（刷新查询的请求和响应）
+    msg.apiBodies.requestBody = `GET ${CONFIG.videoEndpoint}/${taskId}`;
+    msg.apiBodies.responseBody = respStr;
+
+    if (data.status === 'completed') {
+      msg.apiBodies.videoUrl = data.remixed_from_video_id || data.video_url || data.url;
+      msg.apiBodies.videoStatus = 'completed';
+      msg.text = '\u2705 视频已生成完毕';
+    } else if (data.status === 'failed') {
+      msg.apiBodies.videoStatus = 'failed';
+      msg.isError = true;
+      msg.text = '\u274c 视频生成失败';
+    } else {
+      // 还在排队/进行中 — 30 秒后自动再查（除非已暂停）
+      msg.text = '\u2705 视频任务已提交';
+      if (!msg.apiBodies.videoPaused) {
+        if (msg.apiBodies._autoTimer) clearTimeout(msg.apiBodies._autoTimer);
+        msg.apiBodies._autoTimer = setTimeout(() => {
+          refreshVideoTask(convId, msgIdx, taskId);
+        }, 30000);
+      }
+    }
+
+    msg.time = new Date().toISOString();
+    conv.updatedAt = Date.now();
+    await dbPut(conv);
+    if (convId === currentConvId) {
+      // 局部更新该消息的 bubble 内容，不刷新整个聊天区
+      const row = $chatMessages.querySelector(`[data-msg-idx="${msgIdx}"]`);
+      if (row) {
+        const bubble = row.querySelector('.bubble');
+        if (bubble) {
+          bubble.innerHTML = buildBubbleContent(msg);
+        }
+      }
+      scrollToBottom();
+    }
+    renderConvList();
+  } catch (err) {
+    console.error('视频状态查询失败:', err);
+  }
+}
 
 // ==================== Helpers ====================
 function openLightbox(url) { $lightboxImg.src = url; $lightbox.classList.add('active'); }
