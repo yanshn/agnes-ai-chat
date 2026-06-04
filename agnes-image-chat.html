@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agnes AI 图像工坊</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --bg-tertiary: #0f3460;
+    --bg-input: #1e2a3a;
+    --bg-bubble-user: #1a5c8a;
+    --bg-bubble-ai: #1e2a3a;
+    --text-primary: #e0e0e0;
+    --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+    --accent: #4ea8de;
+    --accent-hover: #3d8ec0;
+    --accent-glow: rgba(78,168,222,0.3);
+    --border: #2a3a50;
+    --error: #e0556a;
+    --success: #4caf84;
+    --radius: 14px;
+    --radius-sm: 8px;
+    --transition: 0.2s ease;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+  }
+
+  /* ===== Sidebar ===== */
+  .sidebar {
+    width: 300px; min-width: 300px;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-logo {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 16px; font-weight: 700; color: var(--accent);
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .sidebar-logo svg { width: 28px; height: 28px; flex-shrink: 0; }
+
+  /* 对话列表区 */
+  .conv-list-area {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    display: flex; flex-direction: column;
+  }
+  .conv-list-area::-webkit-scrollbar { width: 4px; }
+  .conv-list-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .conv-list-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px 6px;
+  }
+  .conv-list-header span {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted);
+  }
+  .btn-new-conv {
+    display: flex; align-items: center; gap: 4px;
+    padding: 6px 12px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--accent);
+    font-size: 12px; cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+  }
+  .btn-new-conv:hover { background: rgba(78,168,222,0.15); }
+
+  .conv-list { display: flex; flex-direction: column; padding: 4px 8px; }
+
+  .conv-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: var(--radius-sm);
+    cursor: pointer; transition: var(--transition);
+    font-size: 13px; color: var(--text-secondary);
+    position: relative;
+  }
+  .conv-item:hover { background: rgba(78,168,222,0.08); }
+  .conv-item.active { background: rgba(78,168,222,0.15); color: var(--text-primary); }
+  .conv-item .conv-icon {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .conv-item .conv-icon.idle { background: var(--success); }
+  .conv-item .conv-icon.loading { background: #e8a838; animation: pulse 1.2s ease-in-out infinite; }
+  .conv-item .conv-icon.error { background: var(--error); }
+  .conv-item .conv-name {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .conv-item .conv-name-input {
+    flex: 1; padding: 2px 6px; border: 1px solid var(--accent);
+    border-radius: 4px; background: var(--bg-input); color: var(--text-primary);
+    font-size: 13px; font-family: inherit; outline: none;
+  }
+  .conv-item .conv-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; margin-left: auto; flex-shrink: 0; }
+  .conv-item:hover .conv-actions { opacity: 1; }
+  .conv-item .conv-actions button {
+    background: none; border: none; color: var(--text-muted);
+    cursor: pointer; font-size: 12px; padding: 2px 4px; border-radius: 4px;
+  }
+  .conv-item .conv-actions button:hover { color: var(--error); background: rgba(224,85,106,0.1); }
+
+  .no-convs {
+    padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;
+  }
+
+  /* 设置区（折叠） */
+  .settings-toggle {
+    display: flex; align-items: center; gap: 6px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    cursor: pointer; user-select: none;
+    font-size: 12px; color: var(--text-muted); transition: var(--transition);
+    flex-shrink: 0;
+  }
+  .settings-toggle:hover { color: var(--text-primary); }
+  .settings-toggle .arrow { font-size: 10px; transition: transform 0.2s; }
+  .settings-toggle .arrow.open { transform: rotate(90deg); }
+
+  .settings-panel {
+    display: none; flex-direction: column; gap: 10px;
+    padding: 0 16px 16px;
+    border-top: 1px solid var(--border);
+    overflow-y: auto; max-height: 260px;
+    flex-shrink: 0;
+  }
+  .settings-panel.open { display: flex; }
+  .sidebar-section { display: flex; flex-direction: column; gap: 4px; }
+  .sidebar-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted);
+  }
+  .sidebar input, .sidebar select {
+    width: 100%; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-input); color: var(--text-primary);
+    font-size: 12px; outline: none; transition: border var(--transition);
+  }
+  .sidebar input:focus, .sidebar select:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+  .api-key-wrapper { position: relative; }
+  .api-key-wrapper input { padding-right: 38px; }
+  .toggle-key {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--text-muted);
+    cursor: pointer; padding: 4px; font-size: 13px;
+  }
+  .toggle-key:hover { color: var(--accent); }
+
+  .sidebar-hint {
+    font-size: 10px; color: var(--text-muted); line-height: 1.5;
+    padding: 6px 8px; background: var(--bg-primary);
+    border-radius: 4px; border-left: 3px solid var(--accent);
+  }
+  .sidebar-hint a { color: var(--accent); text-decoration: none; }
+  .sidebar-hint a:hover { text-decoration: underline; }
+
+  .btn-delete-conv {
+    width: 100%; padding: 6px;
+    background: transparent; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text-muted);
+    cursor: pointer; font-size: 11px; transition: var(--transition);
+  }
+  .btn-delete-conv:hover { border-color: var(--error); color: var(--error); }
+
+  /* ===== Main ===== */
+  .main {
+    flex: 1; display: flex; flex-direction: column; min-width: 0;
+  }
+  .chat-header {
+    padding: 14px 24px; border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary); font-size: 14px; font-weight: 600;
+    color: var(--text-secondary); display: flex; align-items: center; gap: 8px;
+    flex-shrink: 0;
+  }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+  .status-dot.offline { background: var(--text-muted); }
+  .status-dot.loading { background: #e8a838; animation: pulse 1.2s ease-in-out infinite; }
+  .status-dot.error { background: var(--error); }
+
+  .chat-messages {
+    flex: 1; overflow-y: auto; padding: 20px 24px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .chat-messages::-webkit-scrollbar { width: 6px; }
+  .chat-messages::-webkit-scrollbar-track { background: transparent; }
+  .chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .welcome {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100%; text-align: center;
+    gap: 12px; opacity: 0.7; padding: 40px;
+  }
+  .welcome svg { width: 64px; height: 64px; opacity: 0.5; margin-bottom: 8px; }
+  .welcome h2 { font-size: 22px; font-weight: 600; }
+  .welcome p { font-size: 14px; color: var(--text-secondary); max-width: 480px; line-height: 1.6; }
+
+  .message-row { display: flex; gap: 12px; animation: fadeIn 0.3s ease; }
+  .message-row.user { justify-content: flex-end; }
+  .message-row.ai { justify-content: flex-start; }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0; align-self: flex-start;
+  }
+  .avatar.user-avatar { background: var(--accent); order: 2; }
+  .avatar.ai-avatar { background: var(--bg-tertiary); }
+
+  .bubble {
+    max-width: 75%; padding: 14px 18px; border-radius: var(--radius);
+    position: relative; word-break: break-word;
+  }
+  .bubble.user { background: var(--bg-bubble-user); border-bottom-right-radius: 4px; }
+  .bubble.ai { background: var(--bg-bubble-ai); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .bubble .msg-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+  .bubble .ref-images { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .bubble .ref-images img, .bubble .gen-image {
+    max-width: 320px; max-height: 320px; border-radius: var(--radius-sm);
+    object-fit: contain; background: #0a0a1a; cursor: pointer;
+    transition: transform var(--transition);
+  }
+  .bubble .ref-images img:hover, .bubble .gen-image:hover { transform: scale(1.02); }
+  .bubble .ref-images img { max-width: 140px; max-height: 100px; }
+  .bubble .gen-image-wrapper {
+    margin-top: 10px; display: flex; flex-direction: column;
+    align-items: flex-start; gap: 6px;
+  }
+  .bubble .gen-label {
+    font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;
+  }
+  .bubble .msg-time { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
+
+  /* Code blocks */
+  .code-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; margin-top: 10px; border-radius: var(--radius-sm);
+    background: rgba(78,168,222,0.1); color: var(--accent);
+    cursor: pointer; font-size: 11px; border: none; user-select: none;
+    transition: var(--transition);
+  }
+  .code-toggle:hover { background: rgba(78,168,222,0.2); }
+  .code-toggle .arrow { display: inline-block; transition: transform 0.2s; font-size: 10px; }
+  .code-toggle .arrow.open { transform: rotate(90deg); }
+  .code-block {
+    display: none; margin-top: 6px; padding: 10px 14px;
+    background: #0d1117; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); font-family: 'Cascadia Code','Fira Code',Consolas,monospace;
+    font-size: 11px; line-height: 1.5; color: #c9d1d9;
+    white-space: pre-wrap; word-break: break-all;
+    max-height: 300px; overflow-y: auto;
+  }
+  .code-block.open { display: block; }
+  .code-block::-webkit-scrollbar { width: 4px; }
+  .code-block::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .code-label { font-size: 10px; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .typing-dots { display: flex; gap: 4px; padding: 8px 0; }
+  .typing-dots span {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-muted); animation: bounce 1.4s ease-in-out infinite;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+  .bubble.error { background: rgba(224,85,106,0.1); border: 1px solid var(--error); }
+  .bubble.error .msg-text { color: var(--error); font-size: 13px; }
+
+  /* Input */
+  .input-area {
+    padding: 16px 24px; border-top: 1px solid var(--border);
+    background: var(--bg-secondary); display: flex; gap: 10px; align-items: flex-end;
+    flex-shrink: 0;
+  }
+  .input-wrapper { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .input-wrapper textarea {
+    width: 100%; resize: none; padding: 12px 16px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-input); color: var(--text-primary);
+    font-size: 14px; font-family: inherit; line-height: 1.5;
+    outline: none; min-height: 46px; max-height: 150px;
+    transition: border var(--transition); overflow-y: auto;
+  }
+  .input-wrapper textarea:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+  .input-wrapper textarea::placeholder { color: var(--text-muted); }
+
+  .ref-url-row { display: flex; gap: 6px; align-items: flex-start; }
+  .ref-url-row input[type="text"] {
+    width: 450px; flex: none; padding: 8px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--bg-input);
+    color: var(--text-primary); font-size: 12px; font-family: inherit;
+    outline: none; transition: border var(--transition);
+    line-height: 1.5; height: 34px;
+  }
+  .ref-url-row input[type="text"]:focus { border-color: var(--accent); }
+  .ref-url-tag {
+    display: inline-flex; align-items: center; gap: 3px;
+    position: relative; flex-shrink: 0;
+  }
+  .ref-url-tag .ref-thumb {
+    width: 44px; height: 34px; border-radius: 4px;
+    object-fit: cover; border: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .ref-url-tag .ref-thumb:hover { border-color: var(--accent); }
+  .ref-url-tag .ref-del {
+    position: absolute; top: -6px; right: -6px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #1a1a2e; border: 1px solid var(--border);
+    color: var(--text-muted); cursor: pointer;
+    font-size: 10px; display: flex; align-items: center; justify-content: center;
+    line-height: 1; transition: var(--transition);
+  }
+  .ref-url-tag .ref-del:hover { color: var(--error); border-color: var(--error); }
+
+  .btn-send {
+    width: 46px; height: 46px; border-radius: 50%; border: none;
+    background: var(--accent); color: #fff; cursor: pointer;
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+    transition: var(--transition); flex-shrink: 0; align-self: flex-end; margin-bottom: 2px;
+  }
+  .btn-send:hover { background: var(--accent-hover); transform: scale(1.05); }
+  .btn-send:disabled { background: var(--border); cursor: not-allowed; transform: none; }
+  .btn-send svg { width: 20px; height: 20px; }
+
+  .lightbox {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85); z-index: 999;
+    align-items: center; justify-content: center; cursor: pointer;
+  }
+  .lightbox.active { display: flex; }
+  .lightbox img {
+    max-width: 90vw; max-height: 90vh; border-radius: var(--radius);
+    box-shadow: 0 8px 60px rgba(0,0,0,0.5);
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes bounce {
+    0%,80%,100% { transform: translateY(0); }
+    40% { transform: translateY(-8px); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== Sidebar ===== -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <svg viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="currentColor" opacity="0.15"/><circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="14" r="2" fill="currentColor"/><circle cx="20" cy="14" r="2" fill="currentColor"/><path d="M10 20c2-3 6-3 8-3s6 0 8 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Agnes AI 图像工坊
+  </div>
+
+  <!-- 对话列表 -->
+  <div class="conv-list-area">
+    <div class="conv-list-header">
+      <span>对话记录</span>
+      <button class="btn-new-conv" id="btnNewConv" title="新建对话">+ 新建</button>
+    </div>
+    <div class="conv-list" id="convList"></div>
+  </div>
+
+  <!-- 设置（可折叠） -->
+  <div class="settings-toggle" id="settingsToggle">
+    <span class="arrow" id="settingsArrow">&#9654;</span> 模型设置
+  </div>
+  <div class="settings-panel" id="settingsPanel">
+    <div class="sidebar-section">
+      <label class="sidebar-label">API Key</label>
+      <div class="api-key-wrapper">
+        <input type="password" id="apikey" placeholder="输入 Agnes API Key……"/>
+        <button class="toggle-key" id="toggleKeyBtn" title="显示/隐藏">&#x1f441;</button>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">模型</label>
+      <select id="modelSelect">
+        <option value="agnes-image-2.1-flash" selected>Agnes-Image-2.1-Flash</option>
+        <option value="agnes-image-2.0-flash">Agnes-Image-2.0-Flash</option>
+        <option value="agnes-video-v2.0">Agnes-Video-V2.0</option>
+      </select>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">输出尺寸</label>
+      <select id="sizeSelect">
+        <option value="1024x768">1024 x 768（横版）</option>
+        <option value="1024x1024" selected>1024 x 1024（正方形）</option>
+        <option value="768x1024">768 x 1024（竖版）</option>
+      </select>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">随机种子（可选）</label>
+      <input type="number" id="seedInput" placeholder="留空则随机……"/>
+    </div>
+    <div class="sidebar-hint">
+      &#x1f4a1; 输入参考图 URL 自动切换<strong>图生图</strong>模式。API 免费，在
+      <a href="https://platform.agnes-ai.com/" target="_blank">Agnes Platform</a> 获取 Key。
+    </div>
+    <button class="btn-delete-conv" id="btnDeleteConv">&#x1f5d1; 删除当前对话</button>
+  </div>
+</aside>
+
+<!-- ===== Main ===== -->
+<main class="main">
+  <div class="chat-header">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">Agnes-Image-2.0-Flash 就绪</span>
+    <span style="margin:0 8px;color:var(--text-muted);">|</span>
+    <span id="convNameDisplay" style="color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px;">—</span>
+  </div>
+  <div class="chat-messages" id="chatMessages"></div>
+  <div class="input-area">
+    <div class="input-wrapper">
+      <textarea id="promptInput" rows="2" placeholder="描述你想要生成的图像，或用自然语言描述如何编辑参考图……&#10;提示：按 Ctrl+Enter 发送"></textarea>
+      <div class="ref-url-row">
+        <input type="text" id="refUrlInput" placeholder="&#x1f517; 粘贴参考图 URL（可选，支持多个，用逗号分隔）" />
+        <div id="refUrlTags" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
+      </div>
+    </div>
+    <button class="btn-send" id="btnSend" title="发送 (Ctrl+Enter)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </div>
+</main>
+
+<div class="lightbox" id="lightbox"><img id="lightboxImg" src="" alt="放大查看"></div>
+
+<script>
+// ==================== IndexedDB ====================
+const DB_NAME = 'agnes_chat_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'conversations';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbGetAll() {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    tx.oncomplete = () => db.close();
+  });
+}
+
+async function dbPut(conv) {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(conv);
+    tx.oncomplete = () => { db.close(); resolve(); };
+  });
+}
+
+async function dbDelete(id) {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(id);
+    tx.oncomplete = () => { db.close(); resolve(); };
+  });
+}
+
+// ==================== State ====================
+const CONFIG = {
+  endpoint: 'https://apihub.agnes-ai.com/v1/images/generations',
+  model: 'agnes-image-2.0-flash',
+};
+
+let conversations = [];      // [{ id, name, messages, createdAt, updatedAt }]
+let currentConvId = null;
+let apiKey = '';
+let refUrls = [];
+let isGenerating = false;
+let convStates = {};  // { convId: 'idle' | 'loading' | 'error' }
+
+// ==================== DOM ====================
+const $apikey       = document.getElementById('apikey');
+const $sizeSelect   = document.getElementById('sizeSelect');
+const $seedInput    = document.getElementById('seedInput');
+const $promptInput  = document.getElementById('promptInput');
+const $refUrlInput  = document.getElementById('refUrlInput');
+const $refUrlTags   = document.getElementById('refUrlTags');
+const $btnSend      = document.getElementById('btnSend');
+const $chatMessages = document.getElementById('chatMessages');
+const $statusDot    = document.getElementById('statusDot');
+const $statusText   = document.getElementById('statusText');
+const $convNameDisp = document.getElementById('convNameDisplay');
+const $lightbox     = document.getElementById('lightbox');
+const $lightboxImg  = document.getElementById('lightboxImg');
+const $convList     = document.getElementById('convList');
+
+// ==================== Conversation helpers ====================
+function getCurrentConv() {
+  return conversations.find(c => c.id === currentConvId) || null;
+}
+
+function getMessages() {
+  const conv = getCurrentConv();
+  return conv ? conv.messages : [];
+}
+
+function setMessages(msgs) {
+  const conv = getCurrentConv();
+  if (conv) {
+    conv.messages = msgs;
+    conv.updatedAt = Date.now();
+  }
+}
+
+async function saveCurrentConv() {
+  const conv = getCurrentConv();
+  if (conv) await dbPut(conv);
+}
+
+function makeConvId() {
+  return 'conv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+}
+
+function defaultConvName() {
+  return '新对话 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+async function createConversation(activate = true) {
+  const conv = {
+    id: makeConvId(),
+    name: defaultConvName(),
+    messages: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  await dbPut(conv);
+  conversations.push(conv);
+  renderConvList();
+  if (activate) switchConversation(conv.id);
+}
+
+async function switchConversation(id) {
+  if (id === currentConvId) return;
+  // 保存当前
+  if (currentConvId && getCurrentConv()) {
+    await saveCurrentConv();
+  }
+  currentConvId = id;
+  refUrls = [];
+  $promptInput.value = '';
+  $refUrlInput.value = '';
+  $promptInput.style.height = 'auto';
+  renderRefTags();
+  renderConvList();
+  renderAllMessages();
+  updateConvNameDisplay();
+  updateStatus();
+  scrollToBottom();
+}
+
+function updateConvNameDisplay() {
+  const conv = getCurrentConv();
+  $convNameDisp.textContent = conv ? conv.name : '—';
+}
+
+async function deleteConversation(id) {
+  const conv = conversations.find(c => c.id === id);
+  if (!conv) return;
+  const name = conv.name || '未命名对话';
+  if (!confirm(`确定要删除「${name}」吗？此操作不可恢复。`)) return;
+
+  await dbDelete(id);
+  conversations = conversations.filter(c => c.id !== id);
+
+  if (id === currentConvId) {
+    // 切到下一个，没有则新建
+    if (conversations.length > 0) {
+      currentConvId = conversations[0].id;
+    } else {
+      currentConvId = null;
+      await createConversation(true);
+      return;
+    }
+  }
+  renderConvList();
+  renderAllMessages();
+}
+
+async function renameConversation(id, newName) {
+  const name = newName.trim();
+  if (!name) return;
+  const conv = conversations.find(c => c.id === id);
+  if (conv) {
+    conv.name = name;
+    conv.updatedAt = Date.now();
+    await dbPut(conv);
+    renderConvList();
+    if (id === currentConvId) updateConvNameDisplay();
+  }
+}
+
+// ==================== Conv List Rendering ====================
+function renderConvList() {
+  // 按更新时间倒序
+  const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  if (sorted.length === 0) {
+    $convList.innerHTML = '<div class="no-convs">暂无对话，点击上方「+ 新建」开始</div>';
+    return;
+  }
+
+  $convList.innerHTML = sorted.map(c => {
+    const active = c.id === currentConvId ? ' active' : '';
+    const name = escapeHtml(c.name || '未命名');
+    const msgCount = c.messages ? c.messages.length : 0;
+    const sub = msgCount > 0 ? `${msgCount} 条消息` : '空对话';
+    const state = convStates[c.id] || 'idle';
+    const stateTitle = state === 'loading' ? '等待响应' : state === 'error' ? '请求异常' : '空闲';
+    return `
+      <div class="conv-item${active}" data-id="${c.id}" onclick="switchConversation('${c.id}')" ondblclick="startRename('${c.id}')">
+        <span class="conv-icon ${state}" title="${stateTitle}"></span>
+        <div>
+          <div class="conv-name">${name}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${escapeHtml(sub)}</div>
+        </div>
+        <div class="conv-actions">
+          <button onclick="event.stopPropagation();startRename('${c.id}')" title="重命名">&#x270f;</button>
+          <button onclick="event.stopPropagation();deleteConversation('${c.id}')" title="删除">&#x1f5d1;</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function startRename(id) {
+  const conv = conversations.find(c => c.id === id);
+  if (!conv) return;
+  const item = $convList.querySelector(`[data-id="${id}"]`);
+  if (!item) return;
+  const nameDiv = item.querySelector('.conv-name');
+  if (!nameDiv) return;
+  const oldName = conv.name;
+  nameDiv.innerHTML = `<input class="conv-name-input" value="${escapeHtml(oldName)}" />`;
+  const input = nameDiv.querySelector('input');
+  input.focus();
+  input.select();
+
+  const finish = () => {
+    const newName = input.value.trim();
+    if (newName && newName !== oldName) {
+      renameConversation(id, newName);
+    } else {
+      renderConvList();
+    }
+  };
+
+  input.addEventListener('blur', finish);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') {
+      input.value = oldName;
+      input.blur();
+    }
+  });
+}
+
+// ==================== Init ====================
+async function init() {
+  apiKey = localStorage.getItem('agnes_api_key') || '';
+  $apikey.value = apiKey;
+  updateStatus();
+
+  // 加载历史对话
+  conversations = await dbGetAll();
+  if (conversations.length === 0) {
+    await createConversation(true);
+  } else {
+    // 打开最近更新的对话
+    const latest = conversations.reduce((a, b) => a.updatedAt > b.updatedAt ? a : b);
+    currentConvId = latest.id;
+    renderConvList();
+    renderAllMessages();
+    updateConvNameDisplay();
+  }
+
+  // Events
+  $apikey.addEventListener('input', () => {
+    apiKey = $apikey.value.trim();
+    localStorage.setItem('agnes_api_key', apiKey);
+    updateStatus();
+  });
+  document.getElementById('toggleKeyBtn').addEventListener('click', () => {
+    $apikey.type = $apikey.type === 'password' ? 'text' : 'password';
+  });
+
+  document.getElementById('settingsToggle').addEventListener('click', () => {
+    const panel = document.getElementById('settingsPanel');
+    const arrow = document.getElementById('settingsArrow');
+    panel.classList.toggle('open');
+    arrow.classList.toggle('open');
+    arrow.innerHTML = panel.classList.contains('open') ? '&#9660;' : '&#9654;';
+  });
+
+  document.getElementById('btnNewConv').addEventListener('click', () => createConversation(true));
+  document.getElementById('btnDeleteConv').addEventListener('click', () => {
+    if (currentConvId) deleteConversation(currentConvId);
+  });
+
+  $refUrlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      e.preventDefault();
+      addRefUrl();
+      sendMessage();
+    }
+  });
+  $refUrlInput.addEventListener('blur', addRefUrl);
+
+  $promptInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  $btnSend.addEventListener('click', sendMessage);
+  $lightbox.addEventListener('click', () => $lightbox.classList.remove('active'));
+  $promptInput.addEventListener('input', autoResizeTextarea);
+  $promptInput.addEventListener('input', autoResizeTextarea);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey && !e.shiftKey) {
+      const active = document.activeElement;
+      if (active === $promptInput || active === $refUrlInput) return;
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+}
+
+// ==================== Ref URL ====================
+function addRefUrl() {
+  const raw = $refUrlInput.value.trim();
+  if (!raw) return;
+  const urls = raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+  for (const url of urls) {
+    if (isValidUrl(url) && !refUrls.includes(url)) refUrls.push(url);
+  }
+  $refUrlInput.value = '';
+  renderRefTags();
+}
+function removeRefUrl(i) { refUrls.splice(i, 1); renderRefTags(); }
+function isValidUrl(s) { try { new URL(s); return true; } catch { return false; } }
+function renderRefTags() {
+  $refUrlTags.innerHTML = refUrls.map((url, i) => `
+    <span class="ref-url-tag">
+      <img class="ref-thumb" src="${escapeHtml(url)}" alt="参考图" title="${escapeHtml(url)}"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='none'"
+           onclick="openLightbox('${escapeHtml(url)}')" />
+      <span class="ref-del" onclick="removeRefUrl(${i})" title="移除">&times;</span>
+    </span>`).join('');
+}
+
+// ==================== Status ====================
+function setConvState(convId, state) {
+  convStates[convId] = state;
+  renderConvList();
+  if (convId === currentConvId) updateStatus();
+}
+
+function updateStatus() {
+  if (!apiKey) {
+    $statusDot.className = 'status-dot offline';
+    $statusText.textContent = '请设置 API Key';
+    return;
+  }
+  const state = convStates[currentConvId] || 'idle';
+  switch (state) {
+    case 'loading':
+      $statusDot.className = 'status-dot loading';
+      $statusText.textContent = '等待响应';
+      break;
+    case 'error':
+      $statusDot.className = 'status-dot error';
+      $statusText.textContent = '请求异常';
+      break;
+    default:
+      $statusDot.className = 'status-dot';
+      $statusText.textContent = '就绪';
+  }
+}
+
+// ==================== Send ====================
+function buildRequestBody(prompt, imageUrls) {
+  const body = { model: document.getElementById('modelSelect').value, prompt, size: $sizeSelect.value, extra_body: { response_format: 'url' } };
+  const seedVal = $seedInput.value.trim();
+  if (seedVal) body.seed = parseInt(seedVal, 10);
+  if (imageUrls && imageUrls.length > 0) {
+    body.tags = ['img2img'];
+    body.extra_body.image = imageUrls;
+  }
+  return body;
+}
+
+async function sendMessage() {
+  const prompt = $promptInput.value.trim();
+  if (!prompt || isGenerating) return;
+  if (!apiKey) {
+    addMessage('ai', '\u26a0\ufe0f 请在左侧设置面板输入 Agnes API Key（platform.agnes-ai.com 免费获取）。', true);
+    return;
+  }
+
+  const pendingUrl = $refUrlInput.value.trim();
+  if (pendingUrl && isValidUrl(pendingUrl)) addRefUrl();
+
+  // 锁定发起请求的对话 ID
+  const sourceConvId = currentConvId;
+
+  isGenerating = true;
+  $btnSend.disabled = true;
+  setConvState(sourceConvId, 'loading');
+
+  const userRefs = [...refUrls];
+  const reqBody = buildRequestBody(prompt, userRefs);
+  const reqBodyStr = JSON.stringify(reqBody, null, 2);
+  await addMessageToConv(sourceConvId, 'user', prompt, false, userRefs, [], { requestBody: reqBodyStr });
+
+  // 首次发言自动命名
+  const conv = conversations.find(c => c.id === sourceConvId);
+  if (conv && conv.name.startsWith('新对话 ') && conv.messages.length <= 2) {
+    conv.name = prompt.substring(0, 30) + (prompt.length > 30 ? '…' : '');
+    conv.updatedAt = Date.now();
+    await dbPut(conv);
+    if (sourceConvId === currentConvId) updateConvNameDisplay();
+    renderConvList();
+  }
+
+  $promptInput.value = '';
+  $promptInput.style.height = 'auto';
+  refUrls = [];
+  renderRefTags();
+
+  try {
+    const result = await callAgnesAPI(prompt, userRefs);
+    setConvState(sourceConvId, 'idle');
+    const imgArray = result.data?.data;
+    if (imgArray && imgArray.length > 0) {
+      const genUrls = imgArray.map(i => i.url).filter(Boolean);
+      const count = genUrls.length;
+      const text = count > 1 ? `\u2705 已为你生成 ${count} 张图像：` : '\u2705 已为你生成图像：';
+      await addMessageToConv(sourceConvId, 'ai', text, false, [], genUrls, { requestBody: result.requestBody, responseBody: result.responseBody });
+    } else {
+      await addMessageToConv(sourceConvId, 'ai', '\u26a0\ufe0f API 返回了空结果。', true, [], [], { requestBody: result.requestBody, responseBody: result.responseBody });
+    }
+  } catch (err) {
+    setConvState(sourceConvId, 'error');
+    const errMsg = err.message || '未知错误';
+    await addMessageToConv(sourceConvId, 'ai', `\u274c 生成失败：${escapeHtml(errMsg)}`, true, [], [], { requestBody: err.requestBody || '', responseBody: err.responseBody || escapeHtml(errMsg) });
+  } finally {
+    isGenerating = false;
+    $btnSend.disabled = false;
+  }
+}
+
+async function callAgnesAPI(prompt, imageUrls) {
+  const body = buildRequestBody(prompt, imageUrls);
+  const requestBodyStr = JSON.stringify(body, null, 2);
+  const resp = await fetch(CONFIG.endpoint, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  let responseBody;
+  try { responseBody = await resp.json(); } catch { responseBody = { raw: await resp.text() }; }
+  if (!resp.ok) {
+    const err = new Error(responseBody?.detail || responseBody?.error?.message || `HTTP ${resp.status}`);
+    err.status = resp.status;
+    err.requestBody = requestBodyStr;
+    err.responseBody = JSON.stringify(responseBody, null, 2);
+    throw err;
+  }
+  return { requestBody: requestBodyStr, responseBody: JSON.stringify(responseBody, null, 2), data: responseBody };
+}
+
+// ==================== Messages ====================
+// 便捷版：写入当前对话
+async function addMessage(role, text, isError = false, refImages = [], genImages = [], apiBodies = null) {
+  return addMessageToConv(currentConvId, role, text, isError, refImages, genImages, apiBodies);
+}
+
+// 核心版：写入指定对话
+async function addMessageToConv(convId, role, text, isError = false, refImages = [], genImages = [], apiBodies = null) {
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv) return;
+  const msg = { role, text, isError, refImages, genImages, time: new Date().toISOString(), apiBodies };
+  conv.messages.push(msg);
+  conv.updatedAt = Date.now();
+  await dbPut(conv);
+  // 仅当写入的是当前显示的对话时才刷新 DOM
+  if (convId === currentConvId) {
+    renderAllMessages();
+    scrollToBottom();
+  }
+  // 始终更新列表（消息数变化）
+  renderConvList();
+}
+
+function addTypingIndicator() {
+  const id = 'typing-' + Date.now();
+  const row = document.createElement('div');
+  row.className = 'message-row ai'; row.id = id;
+  row.innerHTML = '<div class="avatar ai-avatar">&#x1f916;</div><div class="bubble ai"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+  $chatMessages.appendChild(row);
+  return id;
+}
+function removeTypingIndicator(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function renderAllMessages() {
+  const existingTyping = $chatMessages.querySelector('[id^="typing-"]');
+  $chatMessages.innerHTML = '';
+  const msgs = getMessages();
+  if (msgs.length === 0) {
+    $chatMessages.innerHTML = `
+      <div class="welcome">
+        <svg viewBox="0 0 64 64" fill="none"><rect width="64" height="64" rx="16" fill="var(--accent)" opacity="0.1"/><circle cx="32" cy="32" r="20" stroke="var(--accent)" stroke-width="3"/><circle cx="24" cy="28" r="3" fill="var(--accent)"/><circle cx="40" cy="28" r="3" fill="var(--accent)"/><path d="M20 38c4-5 12-5 16-5s12 0 16 5" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/></svg>
+        <h2>欢迎使用 Agnes AI 图像工坊</h2>
+        <p>输入提示词描述你想要的图像，或粘贴参考图 URL 进行编辑变换。支持文生图、图生图和多图合成。</p>
+      </div>`;
+    return;
+  }
+
+  msgs.forEach(msg => {
+    const row = document.createElement('div');
+    row.className = `message-row ${msg.role}`;
+    const isUser = msg.role === 'user';
+    const bubbleClass = `bubble ${msg.role}${msg.isError ? ' error' : ''}`;
+
+    let html = `<div class="avatar ${isUser ? 'user-avatar' : 'ai-avatar'}">${isUser ? '&#x1f464;' : '&#x1f916;'}</div>`;
+    html += `<div class="${bubbleClass}">`;
+
+    if (msg.refImages && msg.refImages.length > 0) {
+      html += '<div class="ref-images">';
+      msg.refImages.forEach(url => {
+        html += `<img src="${escapeHtml(url)}" alt="参考图" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+      });
+      html += '</div>';
+    }
+
+    html += `<div class="msg-text">${msg.text}</div>`;
+
+    if (msg.genImages && msg.genImages.length > 0) {
+      html += '<div class="gen-image-wrapper"><span class="gen-label">&#x1f5bc; 生成结果</span>';
+      msg.genImages.forEach(url => {
+        html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+      });
+      html += '</div>';
+    }
+
+    if (msg.apiBodies) {
+      if (isUser && msg.apiBodies.requestBody) {
+        const uid = codeId();
+        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
+        html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(CONFIG.endpoint)}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
+      }
+      if (!isUser && msg.apiBodies) {
+        if (msg.apiBodies.requestBody) {
+          const uid = codeId();
+          html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
+          html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(CONFIG.endpoint)}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
+        }
+        if (msg.apiBodies.responseBody) {
+          const uid = codeId();
+          html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 响应体 (${msg.apiBodies.responseBody.length} 字符)</button>`;
+          html += `<div class="code-block" id="${uid}"><div class="code-label">${msg.isError ? 'ERROR RESPONSE' : 'RESPONSE'}</div>${escapeHtml(msg.apiBodies.responseBody)}</div>`;
+        }
+      }
+    }
+
+    const t = new Date(msg.time);
+    html += `<div class="msg-time">${formatTime(t)}</div>`;
+    html += '</div>';
+    row.innerHTML = html;
+    $chatMessages.appendChild(row);
+  });
+
+  if (existingTyping) $chatMessages.appendChild(existingTyping);
+
+  // 如果当前对话正在等待响应，显示 typing
+  if ((convStates[currentConvId] || 'idle') === 'loading') {
+    const row = document.createElement('div');
+    row.className = 'message-row ai';
+    row.innerHTML = '<div class="avatar ai-avatar">&#x1f916;</div><div class="bubble ai"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+    $chatMessages.appendChild(row);
+  }
+}
+
+function scrollToBottom() { $chatMessages.scrollTop = $chatMessages.scrollHeight; }
+
+// ==================== Helpers ====================
+function openLightbox(url) { $lightboxImg.src = url; $lightbox.classList.add('active'); }
+
+function toggleCodeBlock(id) {
+  const block = document.getElementById(id);
+  const arrow = document.getElementById(id + '-arrow');
+  if (!block || !arrow) return;
+  const open = block.classList.toggle('open');
+  arrow.classList.toggle('open', open);
+  arrow.innerHTML = open ? '&#9660;' : '&#9654;';
+}
+
+function formatTime(d) {
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function codeId() { return 'cb-' + Math.random().toString(36).slice(2,8); }
+
+function autoResizeTextarea() {
+  $promptInput.style.height = 'auto';
+  $promptInput.style.height = Math.min($promptInput.scrollHeight, 150) + 'px';
+}
+
+init();
+</script>
+</body>
+</html>
