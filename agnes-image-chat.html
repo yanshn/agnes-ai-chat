@@ -1121,13 +1121,16 @@ function removeTypingIndicator(id) {
 }
 
 function buildBubbleContent(msg) {
+  if (msg.apiBodies && msg.apiBodies.videoTaskId) {
+    console.log('[buildBubbleContent] idx=' + msg._idx + ' taskId=' + msg.apiBodies.videoTaskId.slice(0,12) + ' status=' + msg.apiBodies.videoStatus, new Date().toISOString());
+  }
   const isUser = msg.role === 'user';
   let html = '';
 
   if (msg.refImages && msg.refImages.length > 0) {
     html += '<div class="ref-images">';
     msg.refImages.forEach(url => {
-      html += `<img src="${escapeHtml(url)}" alt="参考图" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+      html += `<img src="${escapeHtml(url)}" alt="参考图" onload="scrollToBottom()" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
     });
     html += '</div>';
   }
@@ -1137,7 +1140,7 @@ function buildBubbleContent(msg) {
   if (msg.genImages && msg.genImages.length > 0) {
     html += '<div class="gen-image-wrapper"><span class="gen-label">&#x1f5bc; 生成结果</span>';
     msg.genImages.forEach(url => {
-      html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+      html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" onload="scrollToBottom()" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
     });
     html += '</div>';
   }
@@ -1168,7 +1171,7 @@ function buildBubbleContent(msg) {
     html += '<div class="video-task">';
     if (vt.videoStatus === 'completed' && vt.videoUrl) {
       html += `<div class="gen-label">&#x1f3ac; 视频已生成</div>`;
-      html += `<div class="video-player"><video controls src="${escapeHtml(vt.videoUrl)}"></video></div>`;
+      html += `<div class="video-player"><video controls src="${escapeHtml(vt.videoUrl)}" onloadedmetadata="scrollToBottom()"></video></div>`;
     } else if (vt.videoStatus === 'failed') {
       html += `<div class="msg-text" style="color:var(--error);">&#x274c; 视频生成失败</div>`;
     } else {
@@ -1191,9 +1194,10 @@ function buildBubbleContent(msg) {
 }
 
 function renderAllMessages() {
+  const msgs = getMessages();
+  console.log('[renderAllMessages] msgs=' + msgs.length + ' convId=' + currentConvId, new Date().toISOString());
   const existingTyping = $chatMessages.querySelector('[id^="typing-"]');
   $chatMessages.innerHTML = '';
-  const msgs = getMessages();
   if (msgs.length === 0) {
     $chatMessages.innerHTML = `
       <div class="welcome">
@@ -1222,6 +1226,7 @@ function renderAllMessages() {
   });
 
   if (existingTyping) $chatMessages.appendChild(existingTyping);
+  scrollToBottom();
 
   // 如果当前对话正在等待响应，显示 typing
   if ((convStates[currentConvId] || 'idle') === 'loading') {
