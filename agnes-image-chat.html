@@ -270,6 +270,17 @@
   .bubble.error { background: rgba(224,85,106,0.1); border: 1px solid var(--error); }
   .bubble.error .msg-text { color: var(--error); font-size: 13px; }
 
+  /* Message action buttons */
+  .msg-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
+  .msg-actions button {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-secondary); color: var(--text-muted);
+    cursor: pointer; font-size: 13px; transition: var(--transition);
+  }
+  .msg-actions .btn-act:hover { color: var(--accent); border-color: var(--accent); }
+  .msg-actions .btn-del:hover { color: var(--error); border-color: var(--error); }
+
   /* Video task */
   .video-task { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
   .video-progress-bar {
@@ -502,11 +513,11 @@
   <div class="chat-messages" id="chatMessages"></div>
   <div class="input-area">
     <div class="input-wrapper">
-      <textarea id="promptInput" rows="2" placeholder="描述你想要生成的图像，或用自然语言描述如何编辑参考图……&#10;提示：按 Ctrl+Enter 发送"></textarea>
       <div class="ref-url-row">
         <input type="text" id="refUrlInput" placeholder="&#x1f517; 粘贴参考图 URL（可选，支持多个，用逗号分隔）" />
         <div id="refUrlTags" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
       </div>
+      <textarea id="promptInput" rows="2" placeholder="描述你想要生成的图像，或用自然语言描述如何编辑参考图……&#10;提示：按 Ctrl+Enter 发送"></textarea>
     </div>
     <button class="btn-send" id="btnSend" title="发送 (Ctrl+Enter)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -575,8 +586,7 @@ let conversations = [];      // [{ id, name, messages, createdAt, updatedAt }]
 let currentConvId = null;
 let apiKey = '';
 let refUrls = [];
-let isGenerating = false;
-let convStates = {};  // { convId: 'idle' | 'loading' | 'error' }
+let convPendingRequests = {};  // { convId: count } — pending 请求计数，0=idle，>0=loading
 
 // ==================== DOM ====================
 const $apikey       = document.getElementById('apikey');
@@ -716,7 +726,7 @@ function renderConvList() {
     const name = escapeHtml(c.name || '未命名');
     const msgCount = c.messages ? c.messages.length : 0;
     const sub = msgCount > 0 ? `${msgCount} 条消息` : '空对话';
-    const state = convStates[c.id] || 'idle';
+    const state = getConvState(c.id);
     const stateTitle = state === 'loading' ? '等待响应' : state === 'error' ? '请求异常' : '空闲';
     return `
       <div class="conv-item${active}" data-id="${c.id}" onclick="switchConversation('${c.id}')" ondblclick="startRename('${c.id}')">
@@ -804,6 +814,7 @@ async function init() {
     currentConvId = latest.id;
     renderConvList();
     renderAllMessages();
+    scrollToBottom();
     updateConvNameDisplay();
   }
 
@@ -901,10 +912,20 @@ function renderRefTags() {
 }
 
 // ==================== Status ====================
-function setConvState(convId, state) {
-  convStates[convId] = state;
+function addPendingRequest(convId) {
+  convPendingRequests[convId] = (convPendingRequests[convId] || 0) + 1;
   renderConvList();
   if (convId === currentConvId) updateStatus();
+}
+
+function removePendingRequest(convId) {
+  convPendingRequests[convId] = Math.max(0, (convPendingRequests[convId] || 1) - 1);
+  renderConvList();
+  if (convId === currentConvId) updateStatus();
+}
+
+function getConvState(convId) {
+  return (convPendingRequests[convId] || 0) > 0 ? 'loading' : 'idle';
 }
 
 function updateStatus() {
@@ -913,7 +934,7 @@ function updateStatus() {
     $statusText.textContent = '请设置 API Key';
     return;
   }
-  const state = convStates[currentConvId] || 'idle';
+  const state = getConvState(currentConvId);
   switch (state) {
     case 'loading':
       $statusDot.className = 'status-dot loading';
@@ -946,7 +967,11 @@ function buildRequestBody(prompt, imageUrls) {
     const seedVal = $seedInput.value.trim();
     if (seedVal) body.seed = parseInt(seedVal, 10);
     if (imageUrls && imageUrls.length > 0) {
-      body.image = imageUrls.length === 1 ? imageUrls[0] : imageUrls;
+      if (imageUrls.length === 1) {
+        body.image = imageUrls[0];
+      } else {
+        body.extra_body = { image: imageUrls };
+      }
     }
     return body;
   }
@@ -964,7 +989,7 @@ function buildRequestBody(prompt, imageUrls) {
 
 async function sendMessage() {
   const prompt = $promptInput.value.trim();
-  if (!prompt || isGenerating) return;
+  if (!prompt) return;
   if (!apiKey) {
     addMessage('ai', '\u26a0\ufe0f 请在左侧设置面板输入 Agnes API Key（platform.agnes-ai.com 免费获取）。', true);
     return;
@@ -973,21 +998,32 @@ async function sendMessage() {
   const pendingUrl = $refUrlInput.value.trim();
   if (pendingUrl && isValidUrl(pendingUrl)) addRefUrl();
 
-  // 锁定发起请求的对话 ID
   const sourceConvId = currentConvId;
-
-  isGenerating = true;
-  $btnSend.disabled = true;
-  setConvState(sourceConvId, 'loading');
+  addPendingRequest(sourceConvId);
 
   const userRefs = [...refUrls];
   const reqBody = buildRequestBody(prompt, userRefs);
   const reqBodyStr = JSON.stringify(reqBody, null, 2);
+
+  // 1. 创建 user 消息
   await addMessageToConv(sourceConvId, 'user', prompt, false, userRefs, [], { requestBody: reqBodyStr, _endpoint: getEndpoint() });
+  scrollToBottom();
+
+  const conv = conversations.find(c => c.id === sourceConvId);
+  const msgPid = conv ? conv.messages[conv.messages.length - 1]._msg_id : null;
+
+  // 2. 立即创建 AI 占位消息（紧跟在 user 消息后面）
+  const isVideo = document.getElementById('modelSelect').value === 'agnes-video-v2.0';
+  await addMessageToConv(sourceConvId, 'ai', isVideo ? '\u23f3 正在创建视频任务…' : '\u23f3 正在生成…', false, [], [], { _endpoint: getEndpoint(), _msg_pid: msgPid });
+
+  // 3. 清空输入
+  $promptInput.value = '';
+  $promptInput.style.height = 'auto';
+  refUrls = [];
+  renderRefTags();
 
   // 首次发言自动命名
-  const conv = conversations.find(c => c.id === sourceConvId);
-  if (conv && conv.name.startsWith('新对话 ') && conv.messages.length <= 2) {
+  if (conv && conv.name.startsWith('新对话 ') && conv.messages.length <= 3) {
     conv.name = prompt.substring(0, 30) + (prompt.length > 30 ? '…' : '');
     conv.updatedAt = Date.now();
     await dbPut(conv);
@@ -995,66 +1031,94 @@ async function sendMessage() {
     renderConvList();
   }
 
-  $promptInput.value = '';
-  $promptInput.style.height = 'auto';
-  refUrls = [];
-  renderRefTags();
-
+  // 4. 调用 API 并原地更新占位消息
   try {
     const result = await callAgnesAPI(prompt, userRefs);
-    setConvState(sourceConvId, 'idle');
+    removePendingRequest(sourceConvId);
 
-    const isVideo = document.getElementById('modelSelect').value === 'agnes-video-v2.0';
+    // 找到占位 AI 消息（通过 _msg_pid）
+    const convNow = conversations.find(c => c.id === sourceConvId);
+    if (!convNow) return;
+    const aiMsg = convNow.messages.find(m => m._msg_pid === msgPid);
+    if (!aiMsg) return;
+
+    aiMsg.apiBodies = {
+      requestBody: result.requestBody,
+      responseBody: result.responseBody,
+      _endpoint: getEndpoint(),
+    };
+    aiMsg.time = new Date().toISOString();
+    aiMsg.isError = false;
 
     if (isVideo) {
-      // 视频模型：返回 task_id
       const taskId = result.data?.task_id;
       if (taskId) {
-        await addMessageToConv(sourceConvId, 'ai', '\u2705 视频任务已提交', false, [], [], {
-          requestBody: result.requestBody,
-          responseBody: result.responseBody,
-          _endpoint: getEndpoint(),
-          videoTaskId: taskId,
-          videoStatus: 'queued',
-          videoProgress: 0,
-        });
-        // 30 秒后自动开始轮询
-        const conv2 = conversations.find(c => c.id === sourceConvId);
-        if (conv2) {
-          const idx2 = conv2.messages.length - 1;
-          const msg2 = conv2.messages[idx2];
-          if (msg2.apiBodies) {
-            msg2.apiBodies._autoTimer = setTimeout(() => {
-              refreshVideoTask(sourceConvId, idx2, taskId);
-            }, 30000);
-          }
+        aiMsg.text = '\u2705 视频任务已提交';
+        aiMsg.apiBodies.videoTaskId = taskId;
+        aiMsg.apiBodies.videoStatus = 'queued';
+        aiMsg.apiBodies.videoProgress = 0;
+        // 自动轮询
+        if (sourceConvId === currentConvId) {
+          const idx = convNow.messages.indexOf(aiMsg);
+          aiMsg.apiBodies._autoTimer = setTimeout(() => {
+            refreshVideoTask(sourceConvId, idx, taskId);
+          }, 10000);
         }
       } else {
-        await addMessageToConv(sourceConvId, 'ai', '\u26a0\ufe0f 视频任务创建失败，未返回 task_id', true, [], [], {
-          requestBody: result.requestBody,
-          responseBody: result.responseBody,
-          _endpoint: getEndpoint(),
-        });
+        aiMsg.text = '\u26a0\ufe0f 视频任务创建失败，未返回 task_id';
+        aiMsg.isError = true;
       }
     } else {
-      // 图片模型：原有逻辑
       const imgArray = result.data?.data;
       if (imgArray && imgArray.length > 0) {
         const genUrls = imgArray.map(i => i.url).filter(Boolean);
-        const count = genUrls.length;
-        const text = count > 1 ? `\u2705 已为你生成 ${count} 张图像：` : '\u2705 已为你生成图像：';
-        await addMessageToConv(sourceConvId, 'ai', text, false, [], genUrls, { requestBody: result.requestBody, responseBody: result.responseBody, _endpoint: getEndpoint() });
+        aiMsg.genImages = genUrls;
+        aiMsg.text = genUrls.length > 1 ? `\u2705 已为你生成 ${genUrls.length} 张图像：` : '\u2705 已为你生成图像：';
       } else {
-        await addMessageToConv(sourceConvId, 'ai', '\u26a0\ufe0f API 返回了空结果。', true, [], [], { requestBody: result.requestBody, responseBody: result.responseBody, _endpoint: getEndpoint() });
+        aiMsg.text = '\u26a0\ufe0f API 返回了空结果。';
+        aiMsg.isError = true;
       }
     }
+
+    convNow.updatedAt = Date.now();
+    await dbPut(convNow);
+
+    // 局部更新 DOM
+    if (sourceConvId === currentConvId) {
+      const aiIdx = convNow.messages.indexOf(aiMsg);
+      const row = $chatMessages.querySelector(`[data-msg-idx="${aiIdx}"]`);
+      if (row) {
+        const bubble = row.querySelector('.bubble');
+        if (bubble) { aiMsg._convId = currentConvId; aiMsg._idx = aiIdx; bubble.innerHTML = buildBubbleContent(aiMsg); }
+      }
+    }
+    renderConvList();
   } catch (err) {
-    setConvState(sourceConvId, 'error');
+    removePendingRequest(sourceConvId);
     const errMsg = err.message || '未知错误';
-    await addMessageToConv(sourceConvId, 'ai', `\u274c 生成失败：${escapeHtml(errMsg)}`, true, [], [], { requestBody: err.requestBody || '', responseBody: err.responseBody || escapeHtml(errMsg), _endpoint: getEndpoint() });
-  } finally {
-    isGenerating = false;
-    $btnSend.disabled = false;
+
+    const convNow = conversations.find(c => c.id === sourceConvId);
+    if (!convNow) return;
+    const aiMsg = convNow.messages.find(m => m._msg_pid === msgPid);
+    if (!aiMsg) return;
+
+    aiMsg.text = `\u274c 生成失败：${escapeHtml(errMsg)}`;
+    aiMsg.isError = true;
+    aiMsg.apiBodies = { requestBody: err.requestBody || '', responseBody: err.responseBody || escapeHtml(errMsg), _endpoint: getEndpoint() };
+    aiMsg.time = new Date().toISOString();
+
+    convNow.updatedAt = Date.now();
+    await dbPut(convNow);
+
+    if (sourceConvId === currentConvId) {
+      const aiIdx = convNow.messages.indexOf(aiMsg);
+      const row = $chatMessages.querySelector(`[data-msg-idx="${aiIdx}"]`);
+      if (row) {
+        const bubble = row.querySelector('.bubble');
+        if (bubble) { aiMsg._convId = currentConvId; aiMsg._idx = aiIdx; bubble.innerHTML = buildBubbleContent(aiMsg); }
+      }
+    }
+    renderConvList();
   }
 }
 
@@ -1095,29 +1159,21 @@ async function addMessageToConv(convId, role, text, isError = false, refImages =
   const conv = conversations.find(c => c.id === convId);
   if (!conv) return;
   const msg = { role, text, isError, refImages, genImages, time: new Date().toISOString(), apiBodies };
+  // 消息关联：user 消息生成 _msg_id，AI 消息记录 _msg_pid
+  if (role === 'user') {
+    msg._msg_id = Date.now();
+  }
+  if (apiBodies && apiBodies._msg_pid) {
+    msg._msg_pid = apiBodies._msg_pid;
+    delete apiBodies._msg_pid; // 不存入 apiBodies 中以避免在代码块中显示
+  }
   conv.messages.push(msg);
   conv.updatedAt = Date.now();
   await dbPut(conv);
-  // 仅当写入的是当前显示的对话时才刷新 DOM
   if (convId === currentConvId) {
     renderAllMessages();
-    scrollToBottom();
   }
-  // 始终更新列表（消息数变化）
   renderConvList();
-}
-
-function addTypingIndicator() {
-  const id = 'typing-' + Date.now();
-  const row = document.createElement('div');
-  row.className = 'message-row ai'; row.id = id;
-  row.innerHTML = '<div class="avatar ai-avatar">&#x1f916;</div><div class="bubble ai"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
-  $chatMessages.appendChild(row);
-  return id;
-}
-function removeTypingIndicator(id) {
-  const el = document.getElementById(id);
-  if (el) el.remove();
 }
 
 function buildBubbleContent(msg) {
@@ -1130,7 +1186,7 @@ function buildBubbleContent(msg) {
   if (msg.refImages && msg.refImages.length > 0) {
     html += '<div class="ref-images">';
     msg.refImages.forEach(url => {
-      html += `<img src="${escapeHtml(url)}" alt="参考图" onload="scrollToBottom()" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+      html += `<img src="${escapeHtml(url)}" alt="参考图" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
     });
     html += '</div>';
   }
@@ -1140,7 +1196,7 @@ function buildBubbleContent(msg) {
   if (msg.genImages && msg.genImages.length > 0) {
     html += '<div class="gen-image-wrapper"><span class="gen-label">&#x1f5bc; 生成结果</span>';
     msg.genImages.forEach(url => {
-      html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" onload="scrollToBottom()" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+      html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
     });
     html += '</div>';
   }
@@ -1171,7 +1227,7 @@ function buildBubbleContent(msg) {
     html += '<div class="video-task">';
     if (vt.videoStatus === 'completed' && vt.videoUrl) {
       html += `<div class="gen-label">&#x1f3ac; 视频已生成</div>`;
-      html += `<div class="video-player"><video controls src="${escapeHtml(vt.videoUrl)}" onloadedmetadata="scrollToBottom()"></video></div>`;
+      html += `<div class="video-player"><video controls src="${escapeHtml(vt.videoUrl)}"></video></div>`;
     } else if (vt.videoStatus === 'failed') {
       html += `<div class="msg-text" style="color:var(--error);">&#x274c; 视频生成失败</div>`;
     } else {
@@ -1190,13 +1246,22 @@ function buildBubbleContent(msg) {
 
   const t = new Date(msg.time);
   html += `<div class="msg-time">${formatTime(t)}</div>`;
+
+  // 消息操作按钮
+  html += '<div class="msg-actions">';
+  if (isUser) {
+    html += `<button class="btn-act" title="复制提示词" onclick="event.stopPropagation();copyUserPrompt('${msg._convId}',${msg._idx})">&#x1f4cb;</button>`;
+    html += `<button class="btn-del" title="删除此请求和对应响应" onclick="event.stopPropagation();deleteMsgPair('${msg._convId}',${msg._idx})">&#x1f5d1;</button>`;
+    html += `<button class="btn-act" title="重新生成" onclick="event.stopPropagation();regenerateFromUser('${msg._convId}',${msg._idx})">&#x1f504;</button>`;
+  }
+  html += '</div>';
+
   return html;
 }
 
 function renderAllMessages() {
   const msgs = getMessages();
   console.log('[renderAllMessages] msgs=' + msgs.length + ' convId=' + currentConvId, new Date().toISOString());
-  const existingTyping = $chatMessages.querySelector('[id^="typing-"]');
   $chatMessages.innerHTML = '';
   if (msgs.length === 0) {
     $chatMessages.innerHTML = `
@@ -1224,20 +1289,14 @@ function renderAllMessages() {
     row.innerHTML = html;
     $chatMessages.appendChild(row);
   });
-
-  if (existingTyping) $chatMessages.appendChild(existingTyping);
-  scrollToBottom();
-
-  // 如果当前对话正在等待响应，显示 typing
-  if ((convStates[currentConvId] || 'idle') === 'loading') {
-    const row = document.createElement('div');
-    row.className = 'message-row ai';
-    row.innerHTML = '<div class="avatar ai-avatar">&#x1f916;</div><div class="bubble ai"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
-    $chatMessages.appendChild(row);
-  }
 }
 
-function scrollToBottom() { $chatMessages.scrollTop = $chatMessages.scrollHeight; }
+function scrollToBottom() {
+  // 使用 setTimeout 确保 DOM 布局完全计算后再滚动
+  setTimeout(() => {
+    $chatMessages.scrollTop = $chatMessages.scrollHeight;
+  }, 100);
+}
 
 // ==================== Video Polling ====================
 function toggleSidebar(show) {
@@ -1294,7 +1353,7 @@ async function refreshVideoTask(convId, msgIdx, taskId) {
         if (msg.apiBodies._autoTimer) clearTimeout(msg.apiBodies._autoTimer);
         msg.apiBodies._autoTimer = setTimeout(() => {
           refreshVideoTask(convId, msgIdx, taskId);
-        }, 30000);
+        }, 10000);
       }
     }
 
@@ -1310,11 +1369,225 @@ async function refreshVideoTask(convId, msgIdx, taskId) {
           bubble.innerHTML = buildBubbleContent(msg);
         }
       }
-      scrollToBottom();
     }
     renderConvList();
   } catch (err) {
     console.error('视频状态查询失败:', err);
+  }
+}
+
+// ==================== Message Actions ====================
+async function copyUserPrompt(convId, msgIdx) {
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv || !conv.messages[msgIdx]) return;
+  const text = conv.messages[msgIdx].text || '';
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) { console.error('复制失败:', e); }
+}
+
+async function deleteMsgPair(convId, msgIdx) {
+  if (!confirm('将同时删除此请求和对应的响应消息，确定？')) return;
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv) return;
+  const userMsg = conv.messages[msgIdx];
+  if (!userMsg) return;
+  // 找到关联的 AI 消息
+  const pid = userMsg._msg_id;
+  const aiIdx = conv.messages.findIndex(m => m._msg_pid === pid);
+  // 从后往前删除，避免索引偏移
+  const indices = [msgIdx];
+  if (aiIdx >= 0) indices.push(aiIdx);
+  indices.sort((a, b) => b - a);
+  indices.forEach(i => conv.messages.splice(i, 1));
+  conv.updatedAt = Date.now();
+  await dbPut(conv);
+  if (convId === currentConvId) {
+    renderAllMessages();
+  }
+  renderConvList();
+}
+
+async function deleteAiMsg(convId, msgIdx) {
+  if (!confirm('确定删除此响应消息？')) return;
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv) return;
+  conv.messages.splice(msgIdx, 1);
+  conv.updatedAt = Date.now();
+  await dbPut(conv);
+  if (convId === currentConvId) {
+    renderAllMessages();
+  }
+  renderConvList();
+}
+
+async function regenerateFromUser(convId, msgIdx) {
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv) return;
+  const userMsg = conv.messages[msgIdx];
+  if (!userMsg || userMsg.role !== 'user') return;
+
+  // 从原请求体提取参数
+  let reqParams = {};
+  try {
+    if (userMsg.apiBodies && userMsg.apiBodies.requestBody) {
+      reqParams = JSON.parse(userMsg.apiBodies.requestBody);
+    }
+  } catch (e) { /* 忽略解析错误 */ }
+
+  if (!apiKey) {
+    alert('请先设置 API Key');
+    return;
+  }
+
+  addPendingRequest(convId);
+
+  // ═══ 阶段1：先设为 loading 态 ═══
+  const isVideo = reqParams.model === 'agnes-video-v2.0';
+  let aiMsg = conv.messages.find(m => m._msg_pid === userMsg._msg_id);
+
+  if (aiMsg) {
+    // 更新已有 AI 消息为 loading
+    aiMsg.text = isVideo ? '\u23f3 正在创建视频任务…' : '\u23f3 正在重新生成…';
+    aiMsg.isError = false;
+    aiMsg.genImages = [];
+    aiMsg.apiBodies = null;
+    aiMsg.time = new Date().toISOString();
+    // 清空视频字段
+    delete aiMsg.apiBodies?.videoTaskId;
+    if (aiMsg.apiBodies) {
+      aiMsg.apiBodies.videoTaskId = undefined;
+      aiMsg.apiBodies.videoStatus = undefined;
+      aiMsg.apiBodies.videoProgress = undefined;
+      aiMsg.apiBodies.videoUrl = undefined;
+      aiMsg.apiBodies.videoPaused = undefined;
+      if (aiMsg.apiBodies._autoTimer) { clearTimeout(aiMsg.apiBodies._autoTimer); aiMsg.apiBodies._autoTimer = undefined; }
+    }
+  } else {
+    // 新建 AI 消息
+    aiMsg = {
+      role: 'ai',
+      text: isVideo ? '\u23f3 正在创建视频任务…' : '\u23f3 正在重新生成…',
+      isError: false,
+      refImages: [],
+      genImages: [],
+      time: new Date().toISOString(),
+      _msg_pid: userMsg._msg_id,
+      apiBodies: null,
+    };
+    conv.messages.push(aiMsg);
+  }
+
+  conv.updatedAt = Date.now();
+  await dbPut(conv);
+
+  // 局部更新 DOM
+  if (convId === currentConvId) {
+    const aiIdx = conv.messages.indexOf(aiMsg);
+    const row = $chatMessages.querySelector(`[data-msg-idx="${aiIdx}"]`);
+    if (row) {
+      const bubble = row.querySelector('.bubble');
+      if (bubble) { aiMsg._convId = currentConvId; aiMsg._idx = aiIdx; bubble.innerHTML = buildBubbleContent(aiMsg); }
+    } else {
+      renderAllMessages();
+    }
+  }
+  renderConvList();
+
+  // ═══ 阶段2：调用 API ═══
+  try {
+    const endpoint = isVideo ? CONFIG.videoEndpoint : CONFIG.imageEndpoint;
+    const reqBodyStr = JSON.stringify(reqParams, null, 2);
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: reqBodyStr,
+    });
+    const data = await resp.json();
+    const respStr = JSON.stringify(data, null, 2);
+
+    // 重新获取 aiMsg（可能在 async 间隙中因索引变化而失联）
+    aiMsg = conv.messages.find(m => m._msg_pid === userMsg._msg_id);
+    if (!aiMsg) return;
+
+    aiMsg.apiBodies = {
+      requestBody: reqBodyStr,
+      responseBody: respStr,
+      _endpoint: endpoint,
+    };
+    aiMsg.isError = false;
+    aiMsg.genImages = [];
+    aiMsg.time = new Date().toISOString();
+
+    if (isVideo) {
+      const taskId = data.task_id;
+      if (taskId) {
+        aiMsg.text = '\u2705 视频任务已提交';
+        aiMsg.apiBodies.videoTaskId = taskId;
+        aiMsg.apiBodies.videoStatus = 'queued';
+        aiMsg.apiBodies.videoProgress = 0;
+        // 30 秒后自动轮询
+        if (convId === currentConvId) {
+          const idx = conv.messages.indexOf(aiMsg);
+          aiMsg.apiBodies._autoTimer = setTimeout(() => {
+            refreshVideoTask(convId, idx, taskId);
+          }, 10000);
+        }
+      } else {
+        aiMsg.text = '\u26a0\ufe0f 视频任务创建失败，未返回 task_id';
+        aiMsg.isError = true;
+      }
+    } else {
+      const imgArray = data.data;
+      if (imgArray && imgArray.length > 0) {
+        const genUrls = imgArray.map(i => i.url).filter(Boolean);
+        aiMsg.genImages = genUrls;
+        aiMsg.text = genUrls.length > 1 ? `\u2705 已为你生成 ${genUrls.length} 张图像：` : '\u2705 已为你生成图像：';
+      } else {
+        aiMsg.text = '\u26a0\ufe0f API 返回了空结果。';
+        aiMsg.isError = true;
+      }
+    }
+
+    conv.updatedAt = Date.now();
+    await dbPut(conv);
+    removePendingRequest(convId);
+
+    if (convId === currentConvId) {
+      const aiIdx = conv.messages.indexOf(aiMsg);
+      const row = $chatMessages.querySelector(`[data-msg-idx="${aiIdx}"]`);
+      if (row) {
+        const bubble = row.querySelector('.bubble');
+        if (bubble) { aiMsg._convId = currentConvId; aiMsg._idx = aiIdx; bubble.innerHTML = buildBubbleContent(aiMsg); }
+      } else {
+        renderAllMessages();
+      }
+    }
+    renderConvList();
+  } catch (err) {
+    removePendingRequest(convId);
+    console.error('重新生成失败:', err);
+    // 更新 AI 消息为错误
+    aiMsg = conv.messages.find(m => m._msg_pid === userMsg._msg_id);
+    if (aiMsg) {
+      aiMsg.text = '\u274c 重新生成失败：' + (err.message || '未知错误');
+      aiMsg.isError = true;
+      aiMsg.genImages = [];
+      aiMsg.time = new Date().toISOString();
+      conv.updatedAt = Date.now();
+      await dbPut(conv);
+      if (convId === currentConvId) {
+        const aiIdx = conv.messages.indexOf(aiMsg);
+        const row = $chatMessages.querySelector(`[data-msg-idx="${aiIdx}"]`);
+        if (row) {
+          const bubble = row.querySelector('.bubble');
+          if (bubble) { aiMsg._convId = currentConvId; aiMsg._idx = aiIdx; bubble.innerHTML = buildBubbleContent(aiMsg); }
+        } else {
+          renderAllMessages();
+        }
+      }
+      renderConvList();
+    }
   }
 }
 
