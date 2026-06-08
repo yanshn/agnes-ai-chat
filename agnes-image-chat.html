@@ -401,7 +401,7 @@
     .sidebar-close-btn { display: block; }
     .header-actions button { padding: 4px 6px; font-size: 11px; }
     .chat-header { padding: 12px 14px; gap: 6px; }
-    .chat-header #convNameDisplay { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chat-header #convNameDisplay { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .chat-messages { padding: 12px; gap: 14px; }
     .input-area { padding: 10px 12px; gap: 8px; }
     .input-wrapper textarea { font-size: 13px; padding: 10px 12px; }
@@ -506,8 +506,8 @@
   <div class="chat-header">
     <button class="menu-btn" id="btnMenu" title="菜单">&#9776;</button>
     <span class="status-dot" id="statusDot"></span>
-    <span id="statusText">Agnes-Image-2.0-Flash 就绪</span>
-    <span style="margin:0 8px;color:var(--text-muted);">|</span>
+    <span id="statusText" style="display:none">Agnes-Image-2.0-Flash 就绪</span>
+    <span style="margin:0 8px;color:var(--text-muted);display:none">|</span>
     <span id="convNameDisplay" style="color:var(--text-primary);">—</span>
     <div class="header-actions">
       <button id="btnRenameConv" title="重命名当前对话" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 10px;border-radius:4px;font-size:12px;transition:var(--transition);">&#x270f; 重命名</button>
@@ -870,6 +870,25 @@ async function init() {
     }
   });
   $refUrlInput.addEventListener('blur', addRefUrl);
+  $refUrlInput.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const reader = new FileReader();
+          reader.onload = () => {
+            $refUrlInput.value = reader.result;
+            addRefUrl();
+          };
+          reader.readAsDataURL(item.getAsFile());
+          return;
+        }
+      }
+    }
+    // URL 文本粘贴
+    setTimeout(addRefUrl, 0);
+  });
 
   $promptInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.ctrlKey) {
@@ -895,9 +914,11 @@ async function init() {
 
 // ==================== Ref URL ====================
 function addRefUrl() {
-  const raw = $refUrlInput.value.trim();
+  const raw = $refUrlInput.value.trim().replace(/"/g, '');
   if (!raw) return;
-  const urls = raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+  const urls = raw.startsWith('data:')
+    ? [raw]
+    : raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
   for (const url of urls) {
     if (isValidUrl(url) && !refUrls.includes(url)) refUrls.push(url);
   }
@@ -1249,7 +1270,7 @@ function buildBubbleContent(msg) {
       }
       html += '<div style="display:flex;align-items:center;gap:6px;white-space:nowrap">';
       html += `<button class="btn-video-refresh" onclick="event.stopPropagation();refreshVideoTask('${msg._convId}',${msg._idx},'${vt.videoTaskId}')">&#x1f504; 刷新状态</button>`;
-      html += `<button class="btn-video-refresh" onclick="event.stopPropagation();toggleVideoPause('${msg._convId}',${msg._idx})">${vt.videoPaused ? '&#x25b6; 恢复自动刷新' : '&#x23f8; 暂停自动刷新'}</button>`;
+      html += `<button class="btn-video-refresh" title="每10秒刷新一次" onclick="event.stopPropagation();toggleVideoPause('${msg._convId}',${msg._idx})">${vt.videoPaused ? '&#x25b6; 恢复自刷' : '&#x23f8; 暂停自刷'}</button>`;
       html += '</div>';
     }
     html += '</div>';
