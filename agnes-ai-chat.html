@@ -460,11 +460,16 @@
           <option value="1152x768" selected>1152 x 768（横版）</option>
           <option value="768x1152">768 x 1152（竖版）</option>
           <option value="1024x576">1024 x 576（16:9）</option>
+          <option value="720x480">720 x 480</option>
+          <option value="480x720">480 x 720</option>
+          <option value="2048x1366">2048 x 1366</option>
+          <option value="1366x2048">1366 x 2048</option>
         </select>
       </div>
       <div class="sidebar-section">
         <label class="sidebar-label">帧数 (num_frames)</label>
         <select id="numFrames">
+          <option value="41">41（~1.7s）</option>
           <option value="81">81（~3.4s）</option>
           <option value="121" selected>121（~5s）</option>
           <option value="161">161（~6.7s）</option>
@@ -476,10 +481,16 @@
       <div class="sidebar-section">
         <label class="sidebar-label">帧率 (frame_rate)</label>
         <select id="frameRate">
+          <option value="1">1 fps</option>
+          <option value="2">2 fps</option>
+          <option value="4">4 fps</option>
+          <option value="8">8 fps</option>
           <option value="12">12 fps</option>
-		  <option value="18">18 fps</option>
+          <option value="18">18 fps</option>
           <option value="24" selected>24 fps</option>
           <option value="30">30 fps</option>
+          <option value="48">48 fps</option>
+          <option value="60">60 fps</option>
         </select>
       </div>
     </div>
@@ -489,6 +500,11 @@
         <option value="1024x768">1024 x 768（横版）</option>
         <option value="1024x1024" selected>1024 x 1024（正方形）</option>
         <option value="768x1024">768 x 1024（竖版）</option>
+        <option value="2048x2048">2048 x 2048（高清方形）</option>
+        <option value="1920x1080">1920 x 1080（16:9）</option>
+        <option value="1080x1920">1080 x 1920（9:16）</option>
+        <option value="3840x2160">3840 x 2160（4K）</option>
+        <option value="2160x3840">2160 x 3840（4K竖版）</option>
       </select>
     </div>
     <div class="sidebar-section">
@@ -512,6 +528,7 @@
     <div class="header-actions">
       <button id="btnRenameConv" title="重命名当前对话" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 10px;border-radius:4px;font-size:12px;transition:var(--transition);">&#x270f; 重命名</button>
       <button id="btnDeleteCurrConv" title="删除当前对话" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 10px;border-radius:4px;font-size:12px;transition:var(--transition);">&#x1f5d1; 删除</button>
+      <button id="btnFullscreen" title="全屏浏览" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 8px;border-radius:4px;font-size:16px;transition:var(--transition);line-height:1;">&#x26F6;</button>
     </div>
   </div>
   <div class="chat-messages" id="chatMessages"></div>
@@ -866,6 +883,20 @@ async function init() {
     if (currentConvId) startHeaderRename();
   });
 
+  // 全屏按钮
+  const $btnFS = document.getElementById('btnFullscreen');
+  $btnFS.addEventListener('click', () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen();
+    }
+  });
+  document.addEventListener('fullscreenchange', () => {
+    $btnFS.innerHTML = document.fullscreenElement ? '&#x25A3;' : '&#x26F6;';
+    $btnFS.title = document.fullscreenElement ? '退出全屏' : '全屏浏览';
+  });
+
   $refUrlInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.ctrlKey) {
       e.preventDefault();
@@ -880,12 +911,10 @@ async function init() {
       for (const item of items) {
         if (item.type.startsWith('image/')) {
           e.preventDefault();
-          const reader = new FileReader();
-          reader.onload = () => {
-            $refUrlInput.value = reader.result;
+          blobToWebPBase64(item.getAsFile()).then(dataUrl => {
+            $refUrlInput.value = dataUrl;
             addRefUrl();
-          };
-          reader.readAsDataURL(item.getAsFile());
+          });
           return;
         }
       }
@@ -901,17 +930,14 @@ async function init() {
     if (!files.length) return;
     let done = 0;
     for (const file of files) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result;
+      blobToWebPBase64(file).then(dataUrl => {
         if (!refUrls.includes(dataUrl)) refUrls.push(dataUrl);
         done++;
         if (done === files.length) {
           renderRefTags();
           $refFileInput.value = '';
         }
-      };
-      reader.readAsDataURL(file);
+      });
     }
   });
 
@@ -934,6 +960,49 @@ async function init() {
       e.preventDefault();
       sendMessage();
     }
+  });
+}
+
+// ==================== 图片格式转换 ====================
+function blobToWebPBase64(blob) {
+  return new Promise((resolve) => {
+    // 先尝试直接读，保留原格式以防 canvas 失败
+    const fallbackReader = new FileReader();
+    const originalUrl = new Promise(r => {
+      fallbackReader.onload = () => r(fallbackReader.result);
+      fallbackReader.readAsDataURL(blob);
+    });
+
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      try {
+        const canvas = document.createElement('canvas');
+        // 最大 1024 像素等比例缩放
+        const MAX = 1024;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > MAX || h > MAX) {
+          const ratio = Math.min(MAX / w, MAX / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob(webpBlob => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.readAsDataURL(webpBlob);
+        }, 'image/webp', 0.92);
+      } catch (e) {
+        // canvas 污染（跨域）等异常，回退原格式
+        originalUrl.then(resolve);
+      }
+    };
+    img.onerror = () => originalUrl.then(resolve);
+    img.src = url;
   });
 }
 
@@ -1324,7 +1393,7 @@ function renderAllMessages() {
     $chatMessages.innerHTML = `
       <div class="welcome">
         <svg viewBox="0 0 64 64" fill="none"><rect width="64" height="64" rx="16" fill="var(--accent)" opacity="0.1"/><circle cx="32" cy="32" r="20" stroke="var(--accent)" stroke-width="3"/><circle cx="24" cy="28" r="3" fill="var(--accent)"/><circle cx="40" cy="28" r="3" fill="var(--accent)"/><path d="M20 38c4-5 12-5 16-5s12 0 16 5" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/></svg>
-        <h2>欢迎使用 Agnes AI 图像工坊</h2>
+        <h2>欢迎使用 Agnes 图像工坊</h2>
         <p>输入提示词描述你想要的图像，或粘贴参考图 URL 进行编辑变换。支持文生图、图生图和多图合成。</p>
       </div>`;
     return;
