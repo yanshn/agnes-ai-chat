@@ -31,9 +31,9 @@
 
 | 元素 | 图片/视频模式 | 对话模式 |
 |------|:---:|:---:|
-| 参考图 URL 输入框 | 显示 | **隐藏** |
-| 参考图缩略图 | 显示 | **隐藏** |
-| 提示词 placeholder | "描述你想要生成的图像……" | "输入消息……" |
+| 参考图 URL 输入框 | 显示 | **显示** |
+| 参考图缩略图 | 显示 | **显示** |
+| 提示词 placeholder | "描述你想要生成的图像……" | "输入消息……（可附带图片URL）" |
 | 历史消息显示 | 图片/视频网格 | **对话气泡形式** |
 | 操作按钮（删除/重生成/复制/请求体） | 显示 | **简化为仅复制** |
 
@@ -110,7 +110,7 @@
 
 ## 三、流式输出实现
 
-### 3.1 请求格式
+### 3.1 请求格式（纯文本）
 
 ```json
 POST https://apihub.agnes-ai.com/v1/chat/completions
@@ -131,6 +131,32 @@ Content-Type: application/json
   "chat_template_kwargs": {
     "enable_thinking": true
   }
+}
+```
+
+### 3.1.1 请求格式（含图片 URL 输入）
+
+Agnes-2.0-Flash **支持**通过图片 URL 进行图片理解。当消息包含图片时，`content` 使用数组格式：
+
+```json
+POST https://apihub.agnes-ai.com/v1/chat/completions
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "model": "agnes-2.0-flash",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "text", "text": "请描述这张图片" },
+        { "type": "image_url", "image_url": { "url": "https://example.com/image.jpg" } }
+      ]
+    }
+  ],
+  "temperature": 0.7,
+  "max_tokens": 4096,
+  "stream": true
 }
 ```
 
@@ -190,38 +216,61 @@ while (true) {
 
 ## 四、多轮对话实现
 
-### 4.1 消息历史构造
+### 4.1 消息历史构造（含图片 URL 支持）
 
 ```javascript
-function buildChatMessages(conv, userPrompt) {
+function buildChatMessages(conv, userPrompt, imageUrls) {
   const messages = [];
-  
+
   // system prompt（如果设置了）
   const systemPrompt = document.getElementById('chatSystem').value.trim();
   if (systemPrompt) {
     messages.push({ role: 'system', content: systemPrompt });
   }
-  
+
   // 历史对话（当前对话的所有 user/ai 消息对）
   for (const msg of conv.messages) {
     if (msg.role === 'user') {
-      messages.push({ role: 'user', content: msg.text });
+      // 如果该用户消息有关联的图片 URL，使用 content 数组格式
+      if (msg.refUrls && msg.refUrls.length > 0) {
+        const content = [{ type: "text", text: msg.text }];
+        for (const url of msg.refUrls) {
+          content.push({ type: "image_url", image_url: { url: url } });
+        }
+        messages.push({ role: 'user', content: content });
+      } else {
+        messages.push({ role: 'user', content: msg.text });
+      }
     } else if (msg.role === 'ai' && msg.isError !== true) {
       messages.push({ role: 'assistant', content: msg.text });
     }
   }
-  
-  // 当前用户消息已在 conv.messages 中，不需要重复添加
-  
+
+  // 当前用户消息（含图片 URL 时使用 content 数组）
+  if (imageUrls && imageUrls.length > 0) {
+    const content = [{ type: "text", text: userPrompt }];
+    for (const url of imageUrls) {
+      content.push({ type: "image_url", image_url: { url: url } });
+    }
+    messages.push({ role: 'user', content: content });
+  } else {
+    messages.push({ role: 'user', content: userPrompt });
+  }
+
   return messages;
 }
 ```
 
-### 4.2 无图理解的限制
+### 4.2 图片理解支持
 
-Agnes-2.0-Flash **不支持**多模态图片输入（仅 1.5-Flash 支持），因此：
-- 对话模式下隐藏参考图输入框
-- 对话模式下 refUrls 数组始终为空
+Agnes-2.0-Flash **支持**通过图片 URL 进行图片理解（官方文档确认），因此：
+
+- 对话模式下**保留**参考图 URL 输入框和缩略图显示
+- 对话模式下 refUrls 数组会传入 `buildChatMessages()`，构建包含 `image_url` 类型的 content 数组
+- 图片 URL 要求：必须公网可访问，建议使用 JPG/JPEG/PNG/WebP 格式
+- 图片理解可与工具调用、流式输出和 Agent 工作流结合使用
+
+> **注意**：如图片 URL 需要登录、鉴权或存在防盗链，模型可能无法读取。
 
 ---
 
@@ -274,7 +323,7 @@ function buildRequestBody(prompt, imageUrls) {
   if (cMode === 'chat') {
     // 对话请求体
     const conv = getCurrentConv();
-    const messages = buildChatMessages(conv, prompt);
+    const messages = buildChatMessages(conv, prompt, imageUrls);
     const body = {
       model: document.getElementById('chatModel').value,
       messages: messages,
@@ -301,7 +350,8 @@ async function sendMessage() {
   const cMode = getChatMode();
   
   if (cMode === 'chat') {
-    await sendChatMessage(prompt);
+    const imageUrls = getRefUrls(); // 获取参考图 URL
+    await sendChatMessage(prompt, imageUrls);
     return;
   }
   
@@ -312,13 +362,13 @@ async function sendMessage() {
 ### 6.3 `sendChatMessage()` 新函数
 
 ```javascript
-async function sendChatMessage(prompt) {
+async function sendChatMessage(prompt, imageUrls) {
   const conv = getCurrentConv();
-  const reqBody = buildRequestBody(prompt, []);
+  const reqBody = buildRequestBody(prompt, imageUrls || []);
   const endpoint = 'https://apihub.agnes-ai.com/v1/chat/completions';
   
-  // 先追加 user 消息
-  addMessageToConv(conv.id, 'user', prompt);
+  // 先追加 user 消息（含图片 URL）
+  addMessageToConv(conv.id, 'user', prompt, false, imageUrls || []);
   
   // 创建 AI 消息气泡（空内容，等待流式填充）
   const streamId = 'stream_' + Date.now();
@@ -406,7 +456,7 @@ async function sendChatMessage(prompt) {
 | **DOM 引用** | 新增 chatModel, chatSystem, chatTemp, chatMaxTokens, chatThinking |
 | **`init()`** | 恢复对话配置 localStorage |
 | **`setChatMode()`** | 支持 'chat' 模式 |
-| **`updateChatModeUI()`** | 对话模式隐藏 refUrl 输入框、"+"按钮、refTags |
+| **`updateChatModeUI()`** | 对话模式保留 refUrl 输入框（因 agnes-2.0-flash 支持图片理解）|
 | **`buildRequestBody()`** | 对话模式 → chat completions 格式 |
 | **`sendMessage()`** | 对话模式 → 调用 `sendChatMessage()` |
 | **新增 `sendChatMessage()`** | SSE 流式请求 + 打字机效果渲染 |
@@ -419,7 +469,7 @@ async function sendChatMessage(prompt) {
 
 ## 九、待确认 / 可扩展项
 
-1. **图像理解**：Agnes-2.0-Flash 不支持，如需支持需切换到 Agnes-1.5-Flash（`type: "image_url"`）
+1. **图片理解 Prompt 优化**：Agnes-2.0-Flash 已支持图片 URL 输入和图片理解（通过 `image_url` 类型），后续可优化图片理解场景的 Prompt 模板（如截图分析、界面分析、物体识别等）
 2. **工具调用 (Tool Use)**：API 支持 `tools` 参数，后续可加入智能体工作流
 3. **Thinking 显示**：模型开启思考后，SSE 中可能有 `reasoning_content` 字段，可单独显示思考过程
 4. **对话历史长度控制**：256K context window 很大，但多轮累积可能导致请求体过大，后续可加入消息条数裁剪逻辑
@@ -427,5 +477,5 @@ async function sendChatMessage(prompt) {
 
 ---
 
-*文档版本：v1.0*
+*文档版本：v1.1（修正图片理解支持）*
 *日期：2026-06-08*
