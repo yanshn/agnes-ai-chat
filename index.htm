@@ -1,0 +1,1792 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agnes工坊</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --bg-tertiary: #0f3460;
+    --bg-input: #1e2a3a;
+    --bg-bubble-user: #1a5c8a;
+    --bg-bubble-ai: #1e2a3a;
+    --text-primary: #e0e0e0;
+    --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+    --accent: #4ea8de;
+    --accent-hover: #3d8ec0;
+    --accent-glow: rgba(78,168,222,0.3);
+    --border: #2a3a50;
+    --error: #e0556a;
+    --success: #4caf84;
+    --radius: 14px;
+    --radius-sm: 8px;
+    --transition: 0.2s ease;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+  }
+
+  /* ===== Sidebar ===== */
+  .sidebar {
+    width: 300px; min-width: 300px;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-logo {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 16px; font-weight: 700; color: var(--accent);
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .sidebar-logo svg { width: 28px; height: 28px; flex-shrink: 0; }
+
+  /* 对话列表区 */
+  .conv-list-area {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    display: flex; flex-direction: column;
+  }
+  .conv-list-area::-webkit-scrollbar { width: 4px; }
+  .conv-list-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .conv-list-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px 6px;
+  }
+  .conv-list-header span {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted);
+  }
+  .btn-new-conv {
+    display: flex; align-items: center; gap: 4px;
+    padding: 6px 12px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--accent);
+    font-size: 12px; cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+  }
+  .btn-new-conv:hover { background: rgba(78,168,222,0.15); }
+
+  .conv-list { display: flex; flex-direction: column; padding: 4px 8px; }
+
+  .conv-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: var(--radius-sm);
+    cursor: pointer; transition: var(--transition);
+    font-size: 13px; color: var(--text-secondary);
+    position: relative;
+  }
+  .conv-item:hover { background: rgba(78,168,222,0.08); }
+  .conv-item.active { background: rgba(78,168,222,0.15); color: var(--text-primary); }
+  .conv-item .conv-icon {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .conv-item .conv-icon.idle { background: var(--success); }
+  .conv-item .conv-icon.loading { background: #e8a838; animation: pulse 1.2s ease-in-out infinite; }
+  .conv-item .conv-icon.error { background: var(--error); }
+  .conv-item .conv-name {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .conv-item .conv-name-input {
+    flex: 1; padding: 2px 6px; border: 1px solid var(--accent);
+    border-radius: 4px; background: var(--bg-input); color: var(--text-primary);
+    font-size: 13px; font-family: inherit; outline: none;
+  }
+
+  .no-convs {
+    padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;
+  }
+
+  /* 设置区（折叠） */
+  .settings-toggle {
+    display: flex; align-items: center; gap: 6px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    cursor: pointer; user-select: none;
+    font-size: 12px; color: var(--text-muted); transition: var(--transition);
+    flex-shrink: 0;
+  }
+  .settings-toggle:hover { color: var(--text-primary); }
+  .settings-toggle .arrow { font-size: 10px; transition: transform 0.2s; }
+  .settings-toggle .arrow.open { transform: rotate(90deg); }
+
+  .settings-panel {
+    display: none; flex-direction: column; gap: 10px;
+    padding: 0 16px 16px;
+    border-top: 1px solid var(--border);
+    overflow-y: auto; max-height: 260px;
+    flex-shrink: 0;
+  }
+  .settings-panel.open { display: flex; }
+  .sidebar-section { display: flex; flex-direction: column; gap: 4px; }
+  .sidebar-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted);
+  }
+  .sidebar input, .sidebar select {
+    width: 100%; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-input); color: var(--text-primary);
+    font-size: 12px; outline: none; transition: border var(--transition);
+  }
+  .sidebar input:focus, .sidebar select:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+  .api-key-wrapper { position: relative; }
+  .api-key-wrapper input { padding-right: 38px; }
+  .toggle-key {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--text-muted);
+    cursor: pointer; padding: 4px; font-size: 13px;
+  }
+  .toggle-key:hover { color: var(--accent); }
+
+  .sidebar-hint {
+    font-size: 10px; color: var(--text-muted); line-height: 1.5;
+    padding: 6px 8px; background: var(--bg-primary);
+    border-radius: 4px; border-left: 3px solid var(--accent);
+  }
+  .sidebar-hint a { color: var(--accent); text-decoration: none; }
+  .sidebar-hint a:hover { text-decoration: underline; }
+
+  /* ===== Main ===== */
+  .main {
+    flex: 1; display: flex; flex-direction: column; min-width: 0;
+  }
+  .chat-header {
+    padding: 14px 24px; border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary); font-size: 14px; font-weight: 600;
+    color: var(--text-secondary); display: flex; align-items: center; gap: 8px;
+    flex-shrink: 0;
+  }
+  .header-actions {
+    margin-left: auto; display: flex; gap: 6px; flex-shrink: 0;
+  }
+  .header-actions button:hover { color: var(--accent); border-color: var(--accent); }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+  .status-dot.offline { background: var(--text-muted); }
+  .status-dot.loading { background: #e8a838; animation: pulse 1.2s ease-in-out infinite; }
+  .status-dot.error { background: var(--error); }
+
+  .chat-messages {
+    flex: 1; overflow-y: auto; padding: 20px 24px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .chat-messages::-webkit-scrollbar { width: 6px; }
+  .chat-messages::-webkit-scrollbar-track { background: transparent; }
+  .chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .welcome {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100%; text-align: center;
+    gap: 12px; opacity: 0.7; padding: 40px;
+  }
+  .welcome svg { width: 64px; height: 64px; opacity: 0.5; margin-bottom: 8px; }
+  .welcome h2 { font-size: 22px; font-weight: 600; }
+  .welcome p { font-size: 14px; color: var(--text-secondary); max-width: 480px; line-height: 1.6; }
+
+  .message-row { display: flex; gap: 12px; animation: fadeIn 0.3s ease; }
+  .message-row.user { justify-content: flex-end; }
+  .message-row.ai { justify-content: flex-start; }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0; align-self: flex-start;
+  }
+  .avatar.user-avatar { background: var(--accent); order: 2; }
+  .avatar.ai-avatar { background: var(--bg-tertiary); }
+
+  .bubble {
+    max-width: 75%; padding: 14px 18px; border-radius: var(--radius);
+    position: relative; word-break: break-word;
+  }
+  .bubble.user { background: var(--bg-bubble-user); border-bottom-right-radius: 4px; }
+  .bubble.ai { background: var(--bg-bubble-ai); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .bubble .msg-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+  .bubble .ref-images { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .bubble .ref-images img, .bubble .gen-image {
+    max-width: 320px; max-height: 320px; border-radius: var(--radius-sm);
+    object-fit: contain; background: #0a0a1a; cursor: pointer;
+    transition: transform var(--transition);
+  }
+  .bubble .ref-images img:hover, .bubble .gen-image:hover { transform: scale(1.02); }
+  .bubble .ref-images img { max-width: 140px; max-height: 100px; }
+  .bubble .gen-image-wrapper {
+    margin-top: 10px; display: flex; flex-direction: column;
+    align-items: flex-start; gap: 6px;
+  }
+  .bubble .gen-label {
+    font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;
+  }
+  .bubble .msg-time { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
+
+  /* Code blocks */
+  .code-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; margin-top: 10px; border-radius: var(--radius-sm);
+    background: rgba(78,168,222,0.1); color: var(--accent);
+    cursor: pointer; font-size: 11px; border: none; user-select: none;
+    transition: var(--transition);
+  }
+  .code-toggle:hover { background: rgba(78,168,222,0.2); }
+  .code-toggle .arrow { display: inline-block; transition: transform 0.2s; font-size: 10px; }
+  .code-toggle .arrow.open { transform: rotate(90deg); }
+  .code-block {
+    display: none; margin-top: 6px; padding: 10px 14px;
+    background: #0d1117; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); font-family: 'Cascadia Code','Fira Code',Consolas,monospace;
+    font-size: 11px; line-height: 1.5; color: #c9d1d9;
+    white-space: pre-wrap; word-break: break-all;
+    max-height: 300px; overflow-y: auto;
+  }
+  .code-block.open { display: block; }
+  .code-block::-webkit-scrollbar { width: 4px; }
+  .code-block::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .code-label { font-size: 10px; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .typing-dots { display: flex; gap: 4px; padding: 8px 0; }
+  .typing-dots span {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-muted); animation: bounce 1.4s ease-in-out infinite;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+  .bubble.error { background: rgba(224,85,106,0.1); border: 1px solid var(--error); }
+  .bubble.error .msg-text { color: var(--error); font-size: 13px; }
+
+  .edit-inline textarea { width: 100%; min-height: 50px; padding: 6px 8px; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary); font-size: 14px; line-height: 1.6; font-family: inherit; resize: vertical; }
+
+  /* Message action buttons */
+  .msg-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
+  .msg-actions button {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-secondary); color: var(--text-muted);
+    cursor: pointer; font-size: 13px; transition: var(--transition);
+  }
+  .msg-actions .btn-act:hover { color: var(--accent); border-color: var(--accent); }
+  .msg-actions .btn-del:hover { color: var(--error); border-color: var(--error); }
+
+  /* Video task */
+  .video-task { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .video-progress-bar {
+    width: 100%; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden;
+  }
+  .video-progress-fill {
+    height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.5s;
+  }
+  .btn-video-refresh {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border: 1px solid var(--accent); border-radius: var(--radius-sm);
+    background: rgba(78,168,222,0.1); color: var(--accent);
+    cursor: pointer; font-size: 12px; transition: var(--transition);
+  }
+  .btn-video-refresh:hover { background: rgba(78,168,222,0.2); }
+  .btn-video-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+  .video-player {
+    max-width: 480px; border-radius: var(--radius-sm); overflow: hidden; background: #000;
+  }
+  .video-player video { width: 100%; display: block; }
+
+  /* Input */
+  .input-area {
+    padding: 16px 24px; border-top: 1px solid var(--border);
+    background: var(--bg-secondary); display: flex; gap: 10px; align-items: flex-end;
+    flex-shrink: 0;
+  }
+  .input-wrapper { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .input-wrapper textarea {
+    width: 100%; resize: none; padding: 12px 16px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-input); color: var(--text-primary);
+    font-size: 14px; font-family: inherit; line-height: 1.5;
+    outline: none; min-height: 46px; max-height: 150px;
+    transition: border var(--transition); overflow-y: auto;
+  }
+  .input-wrapper textarea:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+  .input-wrapper textarea::placeholder { color: var(--text-muted); }
+
+  .ref-url-row { display: flex; gap: 6px; align-items: flex-start; }
+  .ref-url-row input[type="text"] {
+    width: 450px; flex: none; padding: 8px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--bg-input);
+    color: var(--text-primary); font-size: 12px; font-family: inherit;
+    outline: none; transition: border var(--transition);
+    line-height: 1.5; height: 34px;
+  }
+  .ref-url-row input[type="text"]:focus { border-color: var(--accent); }
+  .ref-url-tag {
+    display: inline-flex; align-items: center; gap: 3px;
+    position: relative; flex-shrink: 0;
+  }
+  .ref-url-tag .ref-thumb {
+    width: 44px; height: 34px; border-radius: 4px;
+    object-fit: cover; border: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .ref-url-tag .ref-thumb:hover { border-color: var(--accent); }
+  .ref-url-tag .ref-del {
+    position: absolute; top: -6px; right: -6px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #1a1a2e; border: 1px solid var(--border);
+    color: var(--text-muted); cursor: pointer;
+    font-size: 10px; display: flex; align-items: center; justify-content: center;
+    line-height: 1; transition: var(--transition);
+  }
+  .ref-url-tag .ref-del:hover { color: var(--error); border-color: var(--error); }
+
+  .btn-send {
+    width: 46px; height: 46px; border-radius: 50%; border: none;
+    background: var(--accent); color: #fff; cursor: pointer;
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+    transition: var(--transition); flex-shrink: 0; align-self: flex-start; margin-bottom: 2px;
+  }
+  .btn-send:hover { background: var(--accent-hover); transform: scale(1.05); }
+  .btn-send:disabled { background: var(--border); cursor: not-allowed; transform: none; }
+  .btn-send svg { width: 20px; height: 20px; }
+
+  .lightbox {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85); z-index: 999;
+    align-items: center; justify-content: center; cursor: pointer;
+  }
+  .lightbox.active { display: flex; }
+  .lightbox img {
+    max-width: 90vw; max-height: 90vh; border-radius: var(--radius);
+    box-shadow: 0 8px 60px rgba(0,0,0,0.5);
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes bounce {
+    0%,80%,100% { transform: translateY(0); }
+    40% { transform: translateY(-8px); }
+  }
+
+  /* ===== Mobile ===== */
+  .menu-btn { display: none; background: none; border: none; color: var(--text-secondary); font-size: 20px; cursor: pointer; padding: 0 6px; line-height: 1; }
+  .menu-btn:hover { color: var(--accent); }
+  .sidebar-close-btn { display: none; background: none; border: none; color: var(--text-muted); font-size: 22px; cursor: pointer; padding: 0 4px; margin-left: auto; line-height: 1; }
+  .sidebar-close-btn:hover { color: var(--error); }
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 199; }
+  .overlay.show { display: block; }
+
+  @media (max-width: 767px) {
+    .sidebar {
+      position: fixed; left: -280px; top: 0; bottom: 0; z-index: 200;
+      width: 280px; min-width: 280px; transition: left 0.3s ease; box-shadow: none;
+    }
+    .sidebar.open { left: 0; box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
+    .menu-btn { display: block; }
+    .sidebar-close-btn { display: block; }
+    .header-actions button { padding: 4px 6px; font-size: 11px; }
+    .chat-header { padding: 12px 14px; gap: 6px; }
+    .chat-header #convNameDisplay { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chat-messages { padding: 12px; gap: 14px; }
+    .input-area { padding: 10px 12px; gap: 8px; }
+    .input-wrapper textarea { font-size: 13px; padding: 10px 12px; }
+    .ref-url-row input[type="text"] { width: 180px; }
+    .bubble { max-width: 90%; padding: 12px 14px; }
+    .bubble .ref-images img { max-width: 100px; max-height: 70px; }
+    .bubble .gen-image { max-width: 240px; max-height: 240px; }
+    .btn-send { width: 40px; height: 40px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== Sidebar ===== -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <svg viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="currentColor" opacity="0.15"/><circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="14" r="2" fill="currentColor"/><circle cx="20" cy="14" r="2" fill="currentColor"/><path d="M10 20c2-3 6-3 8-3s6 0 8 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Agnes工坊
+    <button class="sidebar-close-btn" id="btnCloseSidebar" title="关闭菜单">&times;</button>
+  </div>
+
+  <!-- 对话列表 -->
+  <div class="conv-list-area">
+    <div class="conv-list-header">
+      <span>对话记录</span>
+      <button class="btn-new-conv" id="btnNewConv" title="新建对话">+ 新建</button>
+    </div>
+    <div class="conv-list" id="convList"></div>
+  </div>
+
+  <!-- 设置（可折叠） -->
+  <div class="settings-toggle" id="settingsToggle">
+    <span class="arrow" id="settingsArrow">&#9654;</span> 模型设置
+  </div>
+  <div class="settings-panel" id="settingsPanel">
+    <div class="sidebar-section">
+      <label class="sidebar-label">API Key</label>
+      <div class="api-key-wrapper">
+        <input type="password" id="apikey" placeholder="输入 Agnes API Key……"/>
+        <button class="toggle-key" id="toggleKeyBtn" title="显示/隐藏">&#x1f441;</button>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">模型</label>
+      <select id="modelSelect">
+        <option value="agnes-image-2.1-flash" selected>Agnes-Image-2.1-Flash</option>
+        <option value="agnes-image-2.0-flash">Agnes-Image-2.0-Flash</option>
+        <option value="agnes-video-v2.0">Agnes-Video-V2.0</option>
+      </select>
+    </div>
+    <!-- 视频参数（仅视频模型时显示） -->
+    <div id="videoSettings" style="display:none">
+      <div class="sidebar-section">
+        <label class="sidebar-label">视频分辨率</label>
+        <select id="videoRes">
+          <option value="1152x768" selected>1152 x 768（横版）</option>
+          <option value="768x1152">768 x 1152（竖版）</option>
+          <option value="1024x576">1024 x 576（16:9）</option>
+          <option value="720x480">720 x 480</option>
+          <option value="480x720">480 x 720</option>
+          <option value="2048x1366">2048 x 1366</option>
+          <option value="1366x2048">1366 x 2048</option>
+        </select>
+      </div>
+      <div class="sidebar-section">
+        <label class="sidebar-label">帧数 (num_frames)</label>
+        <select id="numFrames">
+          <option value="41">41（~1.7s）</option>
+          <option value="81">81（~3.4s）</option>
+          <option value="121" selected>121（~5s）</option>
+          <option value="161">161（~6.7s）</option>
+          <option value="241">241（~10s）</option>
+		  <option value="361">361（~15s）</option>
+		  <option value="441">441（~18s）</option>
+        </select>
+      </div>
+      <div class="sidebar-section">
+        <label class="sidebar-label">帧率 (frame_rate)</label>
+        <select id="frameRate">
+          <option value="1">1 fps</option>
+          <option value="2">2 fps</option>
+          <option value="4">4 fps</option>
+          <option value="8">8 fps</option>
+          <option value="12">12 fps</option>
+          <option value="18">18 fps</option>
+          <option value="24" selected>24 fps</option>
+          <option value="30">30 fps</option>
+          <option value="48">48 fps</option>
+          <option value="60">60 fps</option>
+        </select>
+      </div>
+    </div>
+    <div class="sidebar-section" id="sizeSetting">
+      <label class="sidebar-label">输出尺寸</label>
+      <select id="sizeSelect">
+        <option value="1024x768">1024 x 768（横版）</option>
+        <option value="1024x1024" selected>1024 x 1024（正方形）</option>
+        <option value="768x1024">768 x 1024（竖版）</option>
+        <option value="2048x2048">2048 x 2048（高清方形）</option>
+        <option value="1920x1080">1920 x 1080（16:9）</option>
+        <option value="1080x1920">1080 x 1920（9:16）</option>
+        <option value="3840x2160">3840 x 2160（4K）</option>
+        <option value="2160x3840">2160 x 3840（4K竖版）</option>
+      </select>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">随机种子（可选）</label>
+      <input type="number" id="seedInput" placeholder="留空则随机……"/>
+    </div>
+    <div class="sidebar-hint">API 免费，在
+      <a href="https://platform.agnes-ai.com/" target="_blank">Agnes Platform</a> 获取 Key。
+    </div>
+  </div>
+</aside>
+
+<!-- ===== Main ===== -->
+<main class="main">
+  <div class="chat-header">
+    <button class="menu-btn" id="btnMenu" title="菜单">&#9776;</button>
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText" style="display:none">Agnes-Image-2.0-Flash 就绪</span>
+    <span style="margin:0 8px;color:var(--text-muted);display:none">|</span>
+    <span id="convNameDisplay" style="color:var(--text-primary);">—</span>
+    <div class="header-actions">
+      <button id="btnRenameConv" title="重命名当前对话" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 10px;border-radius:4px;font-size:12px;transition:var(--transition);">&#x270f; 重命名</button>
+      <button id="btnDeleteCurrConv" title="删除当前对话" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 10px;border-radius:4px;font-size:12px;transition:var(--transition);">&#x1f5d1; 删除</button>
+      <button id="btnFullscreen" title="全屏浏览" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 8px;border-radius:4px;font-size:16px;transition:var(--transition);line-height:1;">&#x26F6;</button>
+    </div>
+  </div>
+  <div class="chat-messages" id="chatMessages"></div>
+  <div class="input-area">
+    <div class="input-wrapper">
+      <div class="ref-url-row">
+        <input type="file" id="refFileInput" accept="image/*" multiple style="display:none" />
+        <input type="text" id="refUrlInput" placeholder="&#x1f517; 粘贴参考图 URL（可选，支持多个，用逗号分隔）" />
+        <button id="btnPickImage" title="从相册或文件选取图片" style="flex-shrink:0;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-muted);cursor:pointer;font-size:18px;line-height:1;">+</button>
+        <div id="refUrlTags" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
+      </div>
+      <textarea id="promptInput" rows="3" placeholder="描述你想要生成的图像，或用自然语言描述如何编辑参考图……&#10;提示：按 Ctrl+Enter 发送"></textarea>
+    </div>
+    <button class="btn-send" id="btnSend" title="发送 (Ctrl+Enter)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </div>
+</main>
+
+<div class="lightbox" id="lightbox"><img id="lightboxImg" src="" alt="放大查看"></div>
+<div class="overlay" id="overlay"></div>
+
+<script>
+// ==================== IndexedDB ====================
+const DB_NAME = 'agnes_chat_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'conversations';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbGetAll() {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    tx.oncomplete = () => db.close();
+  });
+}
+
+async function dbPut(conv) {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(conv);
+    tx.oncomplete = () => { db.close(); resolve(); };
+  });
+}
+
+async function dbDelete(id) {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(id);
+    tx.oncomplete = () => { db.close(); resolve(); };
+  });
+}
+
+// ==================== State ====================
+const CONFIG = {
+  imageEndpoint: 'https://apihub.agnes-ai.com/v1/images/generations',
+  videoEndpoint: 'https://apihub.agnes-ai.com/v1/videos',
+};
+
+let conversations = [];      // [{ id, name, messages, createdAt, updatedAt }]
+let currentConvId = null;
+let apiKey = '';
+let refUrls = [];
+let convPendingRequests = {};  // { convId: count } — pending 请求计数，0=idle，>0=loading
+
+// ==================== DOM ====================
+const $apikey       = document.getElementById('apikey');
+const $sizeSelect   = document.getElementById('sizeSelect');
+const $seedInput    = document.getElementById('seedInput');
+const $btnPickImage = document.getElementById('btnPickImage');
+const $refFileInput = document.getElementById('refFileInput');
+const $promptInput  = document.getElementById('promptInput');
+const $refUrlInput  = document.getElementById('refUrlInput');
+const $refUrlTags   = document.getElementById('refUrlTags');
+const $btnSend      = document.getElementById('btnSend');
+const $chatMessages = document.getElementById('chatMessages');
+const $statusDot    = document.getElementById('statusDot');
+const $statusText   = document.getElementById('statusText');
+const $convNameDisp = document.getElementById('convNameDisplay');
+const $lightbox     = document.getElementById('lightbox');
+const $lightboxImg  = document.getElementById('lightboxImg');
+const $convList     = document.getElementById('convList');
+
+// ==================== Conversation helpers ====================
+function getCurrentConv() {
+  return conversations.find(c => c.id === currentConvId) || null;
+}
+
+function getMessages() {
+  const conv = getCurrentConv();
+  return conv ? conv.messages : [];
+}
+
+function setMessages(msgs) {
+  const conv = getCurrentConv();
+  if (conv) {
+    conv.messages = msgs;
+    conv.updatedAt = Date.now();
+  }
+}
+
+async function saveCurrentConv() {
+  const conv = getCurrentConv();
+  if (conv) await dbPut(conv);
+}
+
+function makeConvId() {
+  return 'conv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+}
+
+function defaultConvName() {
+  return '新对话 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+async function createConversation(activate = true) {
+  const conv = {
+    id: makeConvId(),
+    name: defaultConvName(),
+    messages: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  await dbPut(conv);
+  conversations.push(conv);
+  renderConvList();
+  if (activate) switchConversation(conv.id);
+}
+
+async function switchConversation(id) {
+  if (id === currentConvId) return;
+  // 保存当前
+  if (currentConvId && getCurrentConv()) {
+    await saveCurrentConv();
+  }
+  currentConvId = id;
+  refUrls = [];
+  $promptInput.value = '';
+  $refUrlInput.value = '';
+  $promptInput.style.height = 'auto';
+  renderRefTags();
+  renderConvList();
+  renderAllMessages();
+  updateConvNameDisplay();
+  updateStatus();
+  scrollToBottom();
+  // 移动端切换对话后自动关闭侧边栏
+  if (window.innerWidth < 768) toggleSidebar(false);
+}
+
+function updateConvNameDisplay() {
+  const conv = getCurrentConv();
+  $convNameDisp.textContent = conv ? conv.name : '—';
+}
+
+async function deleteConversation(id) {
+  const conv = conversations.find(c => c.id === id);
+  if (!conv) return;
+  const name = conv.name || '未命名对话';
+  if (!confirm(`确定要删除「${name}」吗？此操作不可恢复。`)) return;
+
+  await dbDelete(id);
+  conversations = conversations.filter(c => c.id !== id);
+
+  if (id === currentConvId) {
+    // 切到下一个，没有则新建
+    if (conversations.length > 0) {
+      currentConvId = conversations[0].id;
+    } else {
+      currentConvId = null;
+      await createConversation(true);
+      return;
+    }
+  }
+  renderConvList();
+  renderAllMessages();
+}
+
+async function renameConversation(id, newName) {
+  const name = newName.trim();
+  if (!name) return;
+  const conv = conversations.find(c => c.id === id);
+  if (conv) {
+    conv.name = name;
+    conv.updatedAt = Date.now();
+    await dbPut(conv);
+    renderConvList();
+    if (id === currentConvId) updateConvNameDisplay();
+  }
+}
+
+// ==================== Conv List Rendering ====================
+function renderConvList() {
+  // 按更新时间倒序
+  const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  if (sorted.length === 0) {
+    $convList.innerHTML = '<div class="no-convs">暂无对话，点击上方「+ 新建」开始</div>';
+    return;
+  }
+
+  $convList.innerHTML = sorted.map(c => {
+    const active = c.id === currentConvId ? ' active' : '';
+    const name = escapeHtml(c.name || '未命名');
+    const msgCount = c.messages ? c.messages.length : 0;
+    const sub = msgCount > 0 ? `${msgCount} 条消息` : '空对话';
+    const state = getConvState(c.id);
+    const stateTitle = state === 'loading' ? '等待响应' : state === 'error' ? '请求异常' : '空闲';
+    return `
+      <div class="conv-item${active}" data-id="${c.id}" onclick="switchConversation('${c.id}')" ondblclick="startRename('${c.id}')">
+        <span class="conv-icon ${state}" title="${stateTitle}"></span>
+        <div>
+          <div class="conv-name">${name}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${escapeHtml(sub)}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function startRename(id) {
+  const conv = conversations.find(c => c.id === id);
+  if (!conv) return;
+  const item = $convList.querySelector(`[data-id="${id}"]`);
+  if (!item) return;
+  const nameDiv = item.querySelector('.conv-name');
+  if (!nameDiv) return;
+  const oldName = conv.name;
+  nameDiv.innerHTML = `<input class="conv-name-input" value="${escapeHtml(oldName)}" />`;
+  const input = nameDiv.querySelector('input');
+  input.focus();
+  input.select();
+
+  const finish = () => {
+    const newName = input.value.trim();
+    if (newName && newName !== oldName) {
+      renameConversation(id, newName);
+    } else {
+      renderConvList();
+    }
+  };
+
+  input.addEventListener('blur', finish);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') {
+      input.value = oldName;
+      input.blur();
+    }
+  });
+}
+
+function startHeaderRename() {
+  const conv = getCurrentConv();
+  if (!conv) return;
+  const oldName = conv.name;
+  $convNameDisp.innerHTML = `<input value="${escapeHtml(oldName)}" style="padding:2px 8px;border:1px solid var(--accent);border-radius:4px;background:var(--bg-input);color:var(--text-primary);font-size:14px;font-family:inherit;outline:none;width:300px;" />`;
+  const input = $convNameDisp.querySelector('input');
+  input.focus();
+  input.select();
+
+  const finish = async () => {
+    const newName = input.value.trim();
+    if (newName && newName !== oldName) {
+      await renameConversation(currentConvId, newName);
+    }
+    updateConvNameDisplay();
+  };
+
+  input.addEventListener('blur', finish);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') {
+      input.value = oldName;
+      input.blur();
+    }
+  });
+}
+
+// ==================== Init ====================
+async function init() {
+  apiKey = localStorage.getItem('agnes_api_key') || '';
+  $apikey.value = apiKey;
+  updateStatus();
+
+  // 加载历史对话
+  conversations = await dbGetAll();
+  if (conversations.length === 0) {
+    await createConversation(true);
+  } else {
+    // 打开最近更新的对话
+    const latest = conversations.reduce((a, b) => a.updatedAt > b.updatedAt ? a : b);
+    currentConvId = latest.id;
+    renderConvList();
+    renderAllMessages();
+    scrollToBottom();
+    updateConvNameDisplay();
+  }
+
+  // Events
+  $apikey.addEventListener('input', () => {
+    apiKey = $apikey.value.trim();
+    localStorage.setItem('agnes_api_key', apiKey);
+    updateStatus();
+  });
+  document.getElementById('toggleKeyBtn').addEventListener('click', () => {
+    $apikey.type = $apikey.type === 'password' ? 'text' : 'password';
+  });
+
+  document.getElementById('settingsToggle').addEventListener('click', () => {
+    const panel = document.getElementById('settingsPanel');
+    const arrow = document.getElementById('settingsArrow');
+    panel.classList.toggle('open');
+    arrow.classList.toggle('open');
+    arrow.innerHTML = panel.classList.contains('open') ? '&#9660;' : '&#9654;';
+  });
+
+  // 模型切换时显示/隐藏视频参数区
+  document.getElementById('modelSelect').addEventListener('change', () => {
+    const isVideo = document.getElementById('modelSelect').value === 'agnes-video-v2.0';
+    document.getElementById('videoSettings').style.display = isVideo ? 'block' : 'none';
+    document.getElementById('sizeSetting').style.display = isVideo ? 'none' : 'block';
+    $promptInput.placeholder = isVideo
+      ? '描述你想要生成的视频：主体、动作、场景、镜头运动、光照、风格……\n提示：按 Ctrl+Enter 发送'
+      : '描述你想要生成的图像，或用自然语言描述如何编辑参考图……\n提示：按 Ctrl+Enter 发送';
+  });
+
+  document.getElementById('btnNewConv').addEventListener('click', () => createConversation(true));
+  // 移动端侧边栏开关
+  document.getElementById('btnMenu').addEventListener('click', () => { toggleSidebar(true); });
+  document.getElementById('btnCloseSidebar').addEventListener('click', () => { toggleSidebar(false); });
+  document.getElementById('overlay').addEventListener('click', () => { toggleSidebar(false); });
+  document.getElementById('btnDeleteCurrConv').addEventListener('click', () => {
+    if (currentConvId) deleteConversation(currentConvId);
+  });
+  document.getElementById('btnRenameConv').addEventListener('click', () => {
+    if (currentConvId) startHeaderRename();
+  });
+
+  // 全屏按钮
+  const $btnFS = document.getElementById('btnFullscreen');
+  $btnFS.addEventListener('click', () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen();
+    }
+  });
+  document.addEventListener('fullscreenchange', () => {
+    $btnFS.innerHTML = document.fullscreenElement ? '&#x25A3;' : '&#x26F6;';
+    $btnFS.title = document.fullscreenElement ? '退出全屏' : '全屏浏览';
+  });
+
+  $refUrlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      e.preventDefault();
+      addRefUrl();
+      sendMessage();
+    }
+  });
+  $refUrlInput.addEventListener('blur', addRefUrl);
+  $refUrlInput.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const reader = new FileReader();
+          reader.onload = () => {
+            $refUrlInput.value = reader.result;
+            addRefUrl();
+          };
+          reader.readAsDataURL(item.getAsFile());
+          return;
+        }
+      }
+    }
+    // URL 文本粘贴
+    setTimeout(addRefUrl, 0);
+  });
+
+  // "+"按钮：从相册/文件选取图片
+  $btnPickImage.addEventListener('click', () => { $refFileInput.click(); });
+  $refFileInput.addEventListener('change', () => {
+    const files = $refFileInput.files;
+    if (!files.length) return;
+    let done = 0;
+    for (const file of files) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        if (!refUrls.includes(dataUrl)) refUrls.push(dataUrl);
+        done++;
+        if (done === files.length) {
+          renderRefTags();
+          $refFileInput.value = '';
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+
+  $promptInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  $btnSend.addEventListener('click', sendMessage);
+  $lightbox.addEventListener('click', () => $lightbox.classList.remove('active'));
+  $promptInput.addEventListener('input', autoResizeTextarea);
+  $promptInput.addEventListener('input', autoResizeTextarea);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey && !e.shiftKey) {
+      const active = document.activeElement;
+      if (active === $promptInput || active === $refUrlInput) return;
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+}
+
+// ==================== Ref URL ====================
+function addRefUrl() {
+  const raw = $refUrlInput.value.trim().replace(/"/g, '');
+  if (!raw) return;
+  const urls = raw.startsWith('data:')
+    ? [raw]
+    : raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+  for (const url of urls) {
+    if (isValidUrl(url) && !refUrls.includes(url)) refUrls.push(url);
+  }
+  $refUrlInput.value = '';
+  renderRefTags();
+}
+function removeRefUrl(i) { refUrls.splice(i, 1); renderRefTags(); }
+function isValidUrl(s) { try { new URL(s); return true; } catch { return false; } }
+function renderRefTags() {
+  $refUrlTags.innerHTML = refUrls.map((url, i) => `
+    <span class="ref-url-tag">
+      <img class="ref-thumb" src="${escapeHtml(url)}" alt="参考图" title="${escapeHtml(url)}"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='none'"
+           onclick="openLightbox('${escapeHtml(url)}')" />
+      <span class="ref-del" onclick="removeRefUrl(${i})" title="移除">&times;</span>
+    </span>`).join('');
+}
+
+// ==================== Status ====================
+function addPendingRequest(convId) {
+  convPendingRequests[convId] = (convPendingRequests[convId] || 0) + 1;
+  renderConvList();
+  if (convId === currentConvId) updateStatus();
+}
+
+function removePendingRequest(convId) {
+  convPendingRequests[convId] = Math.max(0, (convPendingRequests[convId] || 1) - 1);
+  renderConvList();
+  if (convId === currentConvId) updateStatus();
+}
+
+function getConvState(convId) {
+  return (convPendingRequests[convId] || 0) > 0 ? 'loading' : 'idle';
+}
+
+function updateStatus() {
+  if (!apiKey) {
+    $statusDot.className = 'status-dot offline';
+    $statusText.textContent = '请设置 API Key';
+    return;
+  }
+  const state = getConvState(currentConvId);
+  switch (state) {
+    case 'loading':
+      $statusDot.className = 'status-dot loading';
+      $statusText.textContent = '等待响应';
+      break;
+    case 'error':
+      $statusDot.className = 'status-dot error';
+      $statusText.textContent = '请求异常';
+      break;
+    default:
+      $statusDot.className = 'status-dot';
+      $statusText.textContent = '就绪';
+  }
+}
+
+// ==================== Send ====================
+function buildRequestBody(prompt, imageUrls) {
+  const model = document.getElementById('modelSelect').value;
+
+  if (model === 'agnes-video-v2.0') {
+    // 视频请求体
+    const res = document.getElementById('videoRes').value.split('x');
+    const body = {
+      model, prompt,
+      width: parseInt(res[0]),
+      height: parseInt(res[1]),
+      num_frames: parseInt(document.getElementById('numFrames').value),
+      frame_rate: parseInt(document.getElementById('frameRate').value),
+    };
+    const seedVal = $seedInput.value.trim();
+    if (seedVal) body.seed = parseInt(seedVal, 10);
+    if (imageUrls && imageUrls.length > 0) {
+      if (imageUrls.length === 1) {
+        body.image = imageUrls[0];
+      } else {
+        body.extra_body = { image: imageUrls };
+      }
+    }
+    return body;
+  }
+
+  // 图片请求体（原有逻辑）
+  const body = { model, prompt, size: $sizeSelect.value, extra_body: { response_format: 'url' } };
+  const seedVal = $seedInput.value.trim();
+  if (seedVal) body.seed = parseInt(seedVal, 10);
+  if (imageUrls && imageUrls.length > 0) {
+    body.tags = ['img2img'];
+    body.extra_body.image = imageUrls;
+  }
+  return body;
+}
+
+async function sendMessage() {
+  const prompt = $promptInput.value.trim();
+  if (!prompt) return;
+  if (!apiKey) {
+    addMessage('ai', '\u26a0\ufe0f 请在左侧设置面板输入 Agnes API Key（platform.agnes-ai.com 免费获取）。', true);
+    return;
+  }
+
+  const pendingUrl = $refUrlInput.value.trim();
+  if (pendingUrl && isValidUrl(pendingUrl)) addRefUrl();
+
+  const sourceConvId = currentConvId;
+  addPendingRequest(sourceConvId);
+
+  const userRefs = [...refUrls];
+  const reqBody = buildRequestBody(prompt, userRefs);
+  const reqBodyStr = JSON.stringify(reqBody, null, 2);
+
+  // 1. 创建 user 消息
+  await addMessageToConv(sourceConvId, 'user', prompt, false, userRefs, [], { requestBody: reqBodyStr, _endpoint: getEndpoint() });
+  scrollToBottom();
+
+  const conv = conversations.find(c => c.id === sourceConvId);
+  const msgPid = conv ? conv.messages[conv.messages.length - 1]._msg_id : null;
+
+  // 2. 立即创建 AI 占位消息（紧跟在 user 消息后面）
+  const isVideo = document.getElementById('modelSelect').value === 'agnes-video-v2.0';
+  await addMessageToConv(sourceConvId, 'ai', isVideo ? '\u23f3 正在创建视频任务…' : '\u23f3 正在生成…', false, [], [], { _endpoint: getEndpoint(), _msg_pid: msgPid });
+
+  // 3. 清空输入
+  $promptInput.value = '';
+  $promptInput.style.height = 'auto';
+  refUrls = [];
+  renderRefTags();
+
+  // 首次发言自动命名
+  if (conv && conv.name.startsWith('新对话 ') && conv.messages.length <= 3) {
+    conv.name = prompt.substring(0, 30) + (prompt.length > 30 ? '…' : '');
+    conv.updatedAt = Date.now();
+    await dbPut(conv);
+    if (sourceConvId === currentConvId) updateConvNameDisplay();
+    renderConvList();
+  }
+
+  // 4. 调用 API 并原地更新占位消息
+  try {
+    const result = await callAgnesAPI(prompt, userRefs);
+    removePendingRequest(sourceConvId);
+
+    // 找到占位 AI 消息（通过 _msg_pid）
+    const convNow = conversations.find(c => c.id === sourceConvId);
+    if (!convNow) return;
+    const aiMsg = convNow.messages.find(m => m._msg_pid === msgPid);
+    if (!aiMsg) return;
+
+    aiMsg.apiBodies = {
+      requestBody: result.requestBody,
+      responseBody: result.responseBody,
+      _endpoint: getEndpoint(),
+    };
+    aiMsg.time = new Date().toISOString();
+    aiMsg.isError = false;
+
+    if (isVideo) {
+      const taskId = result.data?.task_id;
+      if (taskId) {
+        aiMsg.text = '\u2705 视频任务已提交';
+        aiMsg.apiBodies.videoTaskId = taskId;
+        aiMsg.apiBodies.videoStatus = 'queued';
+        aiMsg.apiBodies.videoProgress = 0;
+        // 自动轮询
+        if (sourceConvId === currentConvId) {
+          const idx = convNow.messages.indexOf(aiMsg);
+          aiMsg.apiBodies._autoTimer = setTimeout(() => {
+            refreshVideoTask(sourceConvId, idx, taskId);
+          }, 10000);
+        }
+      } else {
+        aiMsg.text = '\u26a0\ufe0f 视频任务创建失败，未返回 task_id';
+        aiMsg.isError = true;
+      }
+    } else {
+      const imgArray = result.data?.data;
+      if (imgArray && imgArray.length > 0) {
+        const genUrls = imgArray.map(i => i.url).filter(Boolean);
+        aiMsg.genImages = genUrls;
+        aiMsg.text = genUrls.length > 1 ? `\u2705 已为你生成 ${genUrls.length} 张图像：` : '\u2705 已为你生成图像：';
+      } else {
+        aiMsg.text = '\u26a0\ufe0f API 返回了空结果。';
+        aiMsg.isError = true;
+      }
+    }
+
+    convNow.updatedAt = Date.now();
+    await dbPut(convNow);
+
+    // 局部更新 DOM
+    if (sourceConvId === currentConvId) {
+      const aiIdx = convNow.messages.indexOf(aiMsg);
+      const row = $chatMessages.querySelector(`[data-msg-idx="${aiIdx}"]`);
+      if (row) {
+        const bubble = row.querySelector('.bubble');
+        if (bubble) { aiMsg._convId = currentConvId; aiMsg._idx = aiIdx; bubble.innerHTML = buildBubbleContent(aiMsg); }
+      }
+    }
+    renderConvList();
+  } catch (err) {
+    removePendingRequest(sourceConvId);
+    const errMsg = err.message || '未知错误';
+
+    const convNow = conversations.find(c => c.id === sourceConvId);
+    if (!convNow) return;
+    const aiMsg = convNow.messages.find(m => m._msg_pid === msgPid);
+    if (!aiMsg) return;
+
+    aiMsg.text = `\u274c 生成失败：${escapeHtml(errMsg)}`;
+    aiMsg.isError = true;
+    aiMsg.apiBodies = { requestBody: err.requestBody || '', responseBody: err.responseBody || escapeHtml(errMsg), _endpoint: getEndpoint() };
+    aiMsg.time = new Date().toISOString();
+
+    convNow.updatedAt = Date.now();
+    await dbPut(convNow);
+
+    if (sourceConvId === currentConvId) {
+      const aiIdx = convNow.messages.indexOf(aiMsg);
+      const row = $chatMessages.querySelector(`[data-msg-idx="${aiIdx}"]`);
+      if (row) {
+        const bubble = row.querySelector('.bubble');
+        if (bubble) { aiMsg._convId = currentConvId; aiMsg._idx = aiIdx; bubble.innerHTML = buildBubbleContent(aiMsg); }
+      }
+    }
+    renderConvList();
+  }
+}
+
+function getEndpoint() {
+  return document.getElementById('modelSelect').value === 'agnes-video-v2.0'
+    ? CONFIG.videoEndpoint : CONFIG.imageEndpoint;
+}
+
+async function callAgnesAPI(prompt, imageUrls) {
+  const body = buildRequestBody(prompt, imageUrls);
+  const requestBodyStr = JSON.stringify(body, null, 2);
+  const endpoint = getEndpoint();
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  let responseBody;
+  try { responseBody = await resp.json(); } catch { responseBody = { raw: await resp.text() }; }
+  if (!resp.ok) {
+    const err = new Error(responseBody?.detail || responseBody?.error?.message || `HTTP ${resp.status}`);
+    err.status = resp.status;
+    err.requestBody = requestBodyStr;
+    err.responseBody = JSON.stringify(responseBody, null, 2);
+    throw err;
+  }
+  return { requestBody: requestBodyStr, responseBody: JSON.stringify(responseBody, null, 2), data: responseBody };
+}
+
+// ==================== Messages ====================
+// 便捷版：写入当前对话
+async function addMessage(role, text, isError = false, refImages = [], genImages = [], apiBodies = null) {
+  return addMessageToConv(currentConvId, role, text, isError, refImages, genImages, apiBodies);
+}
+
+// 核心版：写入指定对话
+async function addMessageToConv(convId, role, text, isError = false, refImages = [], genImages = [], apiBodies = null) {
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv) return;
+  const msg = { role, text, isError, refImages, genImages, time: new Date().toISOString(), apiBodies };
+  // 消息关联：user 消息生成 _msg_id，AI 消息记录 _msg_pid
+  if (role === 'user') {
+    msg._msg_id = Date.now();
+  }
+  if (apiBodies && apiBodies._msg_pid) {
+    msg._msg_pid = apiBodies._msg_pid;
+    delete apiBodies._msg_pid; // 不存入 apiBodies 中以避免在代码块中显示
+  }
+  conv.messages.push(msg);
+  conv.updatedAt = Date.now();
+  await dbPut(conv);
+  if (convId === currentConvId) {
+    renderAllMessages();
+  }
+  renderConvList();
+}
+
+function buildBubbleContent(msg) {
+  if (msg.apiBodies && msg.apiBodies.videoTaskId) {
+    console.log('[buildBubbleContent] idx=' + msg._idx + ' taskId=' + msg.apiBodies.videoTaskId.slice(0,12) + ' status=' + msg.apiBodies.videoStatus, new Date().toISOString());
+  }
+  const isUser = msg.role === 'user';
+  let html = '';
+
+  if (msg.refImages && msg.refImages.length > 0) {
+    html += '<div class="ref-images">';
+    msg.refImages.forEach(url => {
+      html += `<img src="${escapeHtml(url)}" alt="参考图" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+    });
+    html += '</div>';
+  }
+
+  if (isUser) {
+    html += `<div class="msg-text" onclick="event.stopPropagation();startEditPrompt('${msg._convId}',${msg._idx})">${msg.text}</div>`;
+  } else {
+    html += `<div class="msg-text">${msg.text}</div>`;
+  }
+
+  if (msg.genImages && msg.genImages.length > 0) {
+    html += '<div class="gen-image-wrapper"><span class="gen-label">&#x1f5bc; 生成结果</span>';
+    msg.genImages.forEach(url => {
+      html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+    });
+    html += '</div>';
+  }
+
+  if (msg.apiBodies) {
+    if (isUser && msg.apiBodies.requestBody) {
+      const uid = codeId();
+      html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
+      html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
+    }
+    if (!isUser && msg.apiBodies) {
+      if (msg.apiBodies.requestBody) {
+        const uid = codeId();
+        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
+        html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
+      }
+      if (msg.apiBodies.responseBody) {
+        const uid = codeId();
+        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 响应体 (${msg.apiBodies.responseBody.length} 字符)</button>`;
+        html += `<div class="code-block" id="${uid}"><div class="code-label">${msg.isError ? 'ERROR RESPONSE' : 'RESPONSE'}</div>${escapeHtml(msg.apiBodies.responseBody)}</div>`;
+      }
+    }
+  }
+
+  // 视频任务渲染
+  if (msg.apiBodies && msg.apiBodies.videoTaskId) {
+    const vt = msg.apiBodies;
+    html += '<div class="video-task">';
+    if (vt.videoStatus === 'completed' && vt.videoUrl) {
+      html += `<div class="gen-label">&#x1f3ac; 视频已生成</div>`;
+      html += `<div class="video-player"><video controls src="${escapeHtml(vt.videoUrl)}"></video></div>`;
+    } else if (vt.videoStatus === 'failed') {
+      html += `<div class="msg-text" style="color:var(--error);">&#x274c; 视频生成失败</div>`;
+    } else {
+      const pct = vt.videoProgress || 0;
+      const statusText = vt.videoStatus === 'queued' ? '排队等待中' : '正在生成视频';
+      html += `<div class="msg-text">&#x23f3; ${statusText}（task: ${escapeHtml(vt.videoTaskId.slice(0, 12))}…）</div>`;
+      if (pct > 0) {
+        html += `<div class="video-progress-bar"><div class="video-progress-fill" style="width:${pct}%"></div></div>`;
+        html += `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">进度 ${pct}%</div>`;
+      }
+      html += '<div style="display:flex;align-items:center;gap:6px;white-space:nowrap">';
+      html += `<button class="btn-video-refresh" onclick="event.stopPropagation();refreshVideoTask('${msg._convId}',${msg._idx},'${vt.videoTaskId}')">&#x1f504; 刷新状态</button>`;
+      html += `<button class="btn-video-refresh" title="每10秒刷新一次" onclick="event.stopPropagation();toggleVideoPause('${msg._convId}',${msg._idx})">${vt.videoPaused ? '&#x25b6; 恢复自刷' : '&#x23f8; 暂停自刷'}</button>`;
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  const t = new Date(msg.time);
+  html += `<div class="msg-time">${formatTime(t)}</div>`;
+
+  // 消息操作按钮
+  html += '<div class="msg-actions">';
+  if (isUser) {
+    html += `<button class="btn-act" title="复制提示词" onclick="event.stopPropagation();copyUserPrompt('${msg._convId}',${msg._idx})">&#x1f4cb;</button>`;
+    html += `<button class="btn-del" title="删除此请求和对应响应" onclick="event.stopPropagation();deleteMsgPair('${msg._convId}',${msg._idx})">&#x1f5d1;</button>`;
+    html += `<button class="btn-act" title="重新生成" onclick="event.stopPropagation();regenerateFromUser('${msg._convId}',${msg._idx})">&#x1f504;</button>`;
+  }
+  html += '</div>';
+
+  return html;
+}
+
+function renderAllMessages() {
+  const msgs = getMessages();
+  console.log('[renderAllMessages] msgs=' + msgs.length + ' convId=' + currentConvId, new Date().toISOString());
+  $chatMessages.innerHTML = '';
+  if (msgs.length === 0) {
+    $chatMessages.innerHTML = `
+      <div class="welcome">
+        <svg viewBox="0 0 64 64" fill="none"><rect width="64" height="64" rx="16" fill="var(--accent)" opacity="0.1"/><circle cx="32" cy="32" r="20" stroke="var(--accent)" stroke-width="3"/><circle cx="24" cy="28" r="3" fill="var(--accent)"/><circle cx="40" cy="28" r="3" fill="var(--accent)"/><path d="M20 38c4-5 12-5 16-5s12 0 16 5" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/></svg>
+        <h2>欢迎使用 Agnes 图像工坊</h2>
+        <p>输入提示词描述你想要的图像，或粘贴参考图 URL 进行编辑变换。支持文生图、图生图和多图合成。</p>
+      </div>`;
+    return;
+  }
+
+  msgs.forEach((msg, idx) => {
+    msg._convId = currentConvId;
+    msg._idx = idx;
+    const row = document.createElement('div');
+    row.className = `message-row ${msg.role}`;
+    row.setAttribute('data-msg-idx', idx);
+    const isUser = msg.role === 'user';
+    const bubbleClass = `bubble ${msg.role}${msg.isError ? ' error' : ''}`;
+
+    let html = `<div class="avatar ${isUser ? 'user-avatar' : 'ai-avatar'}">${isUser ? '&#x1f464;' : '&#x1f916;'}</div>`;
+    html += `<div class="${bubbleClass}">`;
+    html += buildBubbleContent(msg);
+    html += '</div>';
+    row.innerHTML = html;
+    $chatMessages.appendChild(row);
+  });
+}
+
+function scrollToBottom() {
+  // 使用 setTimeout 确保 DOM 布局完全计算后再滚动
+  setTimeout(() => {
+    $chatMessages.scrollTop = $chatMessages.scrollHeight;
+  }, 100);
+}
+
+// ==================== Video Polling ====================
+function toggleSidebar(show) {
+  document.getElementById('sidebar').classList.toggle('open', show);
+  document.getElementById('overlay').classList.toggle('show', show);
+}
+
+async function toggleVideoPause(convId, msgIdx) {
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv || !conv.messages[msgIdx] || !conv.messages[msgIdx].apiBodies) return;
+  const msg = conv.messages[msgIdx];
+  msg.apiBodies.videoPaused = !msg.apiBodies.videoPaused;
+  await dbPut(conv);
+  if (convId === currentConvId) renderAllMessages();
+  // 如果恢复自动刷新，立即触发一次
+  if (!msg.apiBodies.videoPaused) {
+    refreshVideoTask(convId, msgIdx, msg.apiBodies.videoTaskId);
+  }
+}
+
+async function refreshVideoTask(convId, msgIdx, taskId) {
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv || !conv.messages[msgIdx]) return;
+  const msg = conv.messages[msgIdx];
+  if (!msg.apiBodies) return;
+
+  try {
+    const resp = await fetch(`${CONFIG.videoEndpoint}/${taskId}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      credentials: 'omit',
+      cache: 'no-store',
+    });
+    const data = await resp.json();
+    const respStr = JSON.stringify(data, null, 2);
+
+    msg.apiBodies.videoStatus = data.status;
+    msg.apiBodies.videoProgress = data.progress || 0;
+    // 更新请求/响应体（刷新查询的请求和响应）
+    msg.apiBodies.requestBody = `GET ${CONFIG.videoEndpoint}/${taskId}`;
+    msg.apiBodies.responseBody = respStr;
+
+    if (data.status === 'completed') {
+      msg.apiBodies.videoUrl = data.remixed_from_video_id || data.video_url || data.url;
+      msg.apiBodies.videoStatus = 'completed';
+      msg.text = '\u2705 视频已生成完毕';
+    } else if (data.status === 'failed') {
+      msg.apiBodies.videoStatus = 'failed';
+      msg.isError = true;
+      msg.text = '\u274c 视频生成失败';
+    } else {
+      // 还在排队/进行中 — 30 秒后自动再查（除非已暂停）
+      msg.text = '\u2705 视频任务已提交';
+      if (!msg.apiBodies.videoPaused) {
+        if (msg.apiBodies._autoTimer) clearTimeout(msg.apiBodies._autoTimer);
+        msg.apiBodies._autoTimer = setTimeout(() => {
+          refreshVideoTask(convId, msgIdx, taskId);
+        }, 10000);
+      }
+    }
+
+    msg.time = new Date().toISOString();
+    conv.updatedAt = Date.now();
+    await dbPut(conv);
+    if (convId === currentConvId) {
+      // 局部更新该消息的 bubble 内容，不刷新整个聊天区
+      const row = $chatMessages.querySelector(`[data-msg-idx="${msgIdx}"]`);
+      if (row) {
+        const bubble = row.querySelector('.bubble');
+        if (bubble) {
+          bubble.innerHTML = buildBubbleContent(msg);
+        }
+      }
+    }
+    renderConvList();
+  } catch (err) {
+    console.error('视频状态查询失败:', err);
+  }
+}
+
+// ==================== Message Actions ====================
+function startEditPrompt(convId, msgIdx) {
+  // 防止重复编辑
+  const existingTa = document.getElementById('editPromptTextarea');
+  if (existingTa) return;
+
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv) return;
+  const msg = conv.messages[msgIdx];
+  if (!msg || msg.role !== 'user') return;
+  const row = $chatMessages.querySelector(`[data-msg-idx="${msgIdx}"]`);
+  if (!row) return;
+  const textEl = row.querySelector('.msg-text');
+  if (!textEl) return;
+
+  const originalText = msg.text;
+  textEl.classList.add('edit-inline');
+  textEl.innerHTML = `<textarea id="editPromptTextarea" rows="4" onclick="event.stopPropagation()">${escapeHtml(originalText)}</textarea>`;
+
+  const ta = document.getElementById('editPromptTextarea');
+  requestAnimationFrame(() => {
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  });
+
+  // 失焦或点击其他地方时自动保存（延迟检查，避免 textarea 内部操作触发）
+  ta.addEventListener('blur', () => {
+    setTimeout(() => saveEditPrompt(convId, msgIdx), 50);
+  });
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { cancelEditPrompt(convId, msgIdx, originalText); }
+  });
+}
+
+async function saveEditPrompt(convId, msgIdx) {
+  const ta = document.getElementById('editPromptTextarea');
+  if (!ta) return;
+  const newText = ta.value.trim();
+  if (!newText) return;
+
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv) return;
+  const msg = conv.messages[msgIdx];
+  if (!msg) return;
+  msg.text = newText;
+  conv.updatedAt = Date.now();
+  await dbPut(conv);
+
+  // 更新 DOM
+  const row = $chatMessages.querySelector(`[data-msg-idx="${msgIdx}"]`);
+  if (row) {
+    const bubble = row.querySelector('.bubble');
+    if (bubble) { msg._convId = convId; msg._idx = msgIdx; bubble.innerHTML = buildBubbleContent(msg); }
+  }
+  renderConvList();
+}
+
+function cancelEditPrompt(convId, msgIdx, originalText) {
+  const row = $chatMessages.querySelector(`[data-msg-idx="${msgIdx}"]`);
+  if (row) {
+    const textEl = row.querySelector('.edit-inline');
+    if (textEl) {
+      textEl.classList.remove('edit-inline');
+      textEl.innerHTML = originalText;
+    }
+  }
+}
+
+async function copyUserPrompt(convId, msgIdx) {
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv || !conv.messages[msgIdx]) return;
+  const text = conv.messages[msgIdx].text || '';
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    // 降级：execCommand 兼容 file:// 和移动端非安全上下文
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+}
+
+async function deleteMsgPair(convId, msgIdx) {
+  if (!confirm('将同时删除此请求和对应的响应消息，确定？')) return;
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv) return;
+  const userMsg = conv.messages[msgIdx];
+  if (!userMsg) return;
+  // 找到关联的 AI 消息
+  const pid = userMsg._msg_id;
+  const aiIdx = conv.messages.findIndex(m => m._msg_pid === pid);
+  // 从后往前删除，避免索引偏移
+  const indices = [msgIdx];
+  if (aiIdx >= 0) indices.push(aiIdx);
+  indices.sort((a, b) => b - a);
+  indices.forEach(i => conv.messages.splice(i, 1));
+  conv.updatedAt = Date.now();
+  await dbPut(conv);
+  if (convId === currentConvId) {
+    renderAllMessages();
+  }
+  renderConvList();
+}
+
+async function deleteAiMsg(convId, msgIdx) {
+  if (!confirm('确定删除此响应消息？')) return;
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv) return;
+  conv.messages.splice(msgIdx, 1);
+  conv.updatedAt = Date.now();
+  await dbPut(conv);
+  if (convId === currentConvId) {
+    renderAllMessages();
+  }
+  renderConvList();
+}
+
+async function regenerateFromUser(convId, msgIdx) {
+  // 如果正在编辑提示词，先保存
+  const editingTa = document.getElementById('editPromptTextarea');
+  if (editingTa) { await saveEditPrompt(convId, msgIdx); }
+
+  const conv = conversations.find(c => c.id === convId);
+  if (!conv) return;
+  const userMsg = conv.messages[msgIdx];
+  if (!userMsg || userMsg.role !== 'user') return;
+
+  // 从原请求体提取参数，但用最新的提示词文本
+  let reqParams = {};
+  try {
+    if (userMsg.apiBodies && userMsg.apiBodies.requestBody) {
+      reqParams = JSON.parse(userMsg.apiBodies.requestBody);
+    }
+  } catch (e) { /* 忽略解析错误 */ }
+  reqParams.prompt = userMsg.text;
+
+  if (!apiKey) {
+    alert('请先设置 API Key');
+    return;
+  }
+
+  addPendingRequest(convId);
+
+  // ═══ 阶段1：先设为 loading 态 ═══
+  const isVideo = reqParams.model === 'agnes-video-v2.0';
+  let aiMsg = conv.messages.find(m => m._msg_pid === userMsg._msg_id);
+
+  if (aiMsg) {
+    // 更新已有 AI 消息为 loading
+    aiMsg.text = isVideo ? '\u23f3 正在创建视频任务…' : '\u23f3 正在重新生成…';
+    aiMsg.isError = false;
+    aiMsg.genImages = [];
+    aiMsg.apiBodies = null;
+    aiMsg.time = new Date().toISOString();
+    // 清空视频字段
+    delete aiMsg.apiBodies?.videoTaskId;
+    if (aiMsg.apiBodies) {
+      aiMsg.apiBodies.videoTaskId = undefined;
+      aiMsg.apiBodies.videoStatus = undefined;
+      aiMsg.apiBodies.videoProgress = undefined;
+      aiMsg.apiBodies.videoUrl = undefined;
+      aiMsg.apiBodies.videoPaused = undefined;
+      if (aiMsg.apiBodies._autoTimer) { clearTimeout(aiMsg.apiBodies._autoTimer); aiMsg.apiBodies._autoTimer = undefined; }
+    }
+  } else {
+    // 新建 AI 消息
+    aiMsg = {
+      role: 'ai',
+      text: isVideo ? '\u23f3 正在创建视频任务…' : '\u23f3 正在重新生成…',
+      isError: false,
+      refImages: [],
+      genImages: [],
+      time: new Date().toISOString(),
+      _msg_pid: userMsg._msg_id,
+      apiBodies: null,
+    };
+    conv.messages.push(aiMsg);
+  }
+
+  conv.updatedAt = Date.now();
+  await dbPut(conv);
+
+  // 局部更新 DOM
+  if (convId === currentConvId) {
+    const aiIdx = conv.messages.indexOf(aiMsg);
+    const row = $chatMessages.querySelector(`[data-msg-idx="${aiIdx}"]`);
+    if (row) {
+      const bubble = row.querySelector('.bubble');
+      if (bubble) { aiMsg._convId = currentConvId; aiMsg._idx = aiIdx; bubble.innerHTML = buildBubbleContent(aiMsg); }
+    } else {
+      renderAllMessages();
+    }
+  }
+  renderConvList();
+
+  // ═══ 阶段2：调用 API ═══
+  try {
+    const endpoint = isVideo ? CONFIG.videoEndpoint : CONFIG.imageEndpoint;
+    const reqBodyStr = JSON.stringify(reqParams, null, 2);
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: reqBodyStr,
+    });
+    const data = await resp.json();
+    const respStr = JSON.stringify(data, null, 2);
+
+    // 重新获取 aiMsg（可能在 async 间隙中因索引变化而失联）
+    aiMsg = conv.messages.find(m => m._msg_pid === userMsg._msg_id);
+    if (!aiMsg) return;
+
+    // 更新 user 消息块的请求体（提示词可能已被编辑）
+    userMsg.apiBodies.requestBody = reqBodyStr;
+
+    aiMsg.apiBodies = {
+      requestBody: reqBodyStr,
+      responseBody: respStr,
+      _endpoint: endpoint,
+    };
+    aiMsg.isError = false;
+    aiMsg.genImages = [];
+    aiMsg.time = new Date().toISOString();
+
+    if (isVideo) {
+      const taskId = data.task_id;
+      if (taskId) {
+        aiMsg.text = '\u2705 视频任务已提交';
+        aiMsg.apiBodies.videoTaskId = taskId;
+        aiMsg.apiBodies.videoStatus = 'queued';
+        aiMsg.apiBodies.videoProgress = 0;
+        // 30 秒后自动轮询
+        if (convId === currentConvId) {
+          const idx = conv.messages.indexOf(aiMsg);
+          aiMsg.apiBodies._autoTimer = setTimeout(() => {
+            refreshVideoTask(convId, idx, taskId);
+          }, 10000);
+        }
+      } else {
+        aiMsg.text = '\u26a0\ufe0f 视频任务创建失败，未返回 task_id';
+        aiMsg.isError = true;
+      }
+    } else {
+      const imgArray = data.data;
+      if (imgArray && imgArray.length > 0) {
+        const genUrls = imgArray.map(i => i.url).filter(Boolean);
+        aiMsg.genImages = genUrls;
+        aiMsg.text = genUrls.length > 1 ? `\u2705 已为你生成 ${genUrls.length} 张图像：` : '\u2705 已为你生成图像：';
+      } else {
+        aiMsg.text = '\u26a0\ufe0f API 返回了空结果。';
+        aiMsg.isError = true;
+      }
+    }
+
+    conv.updatedAt = Date.now();
+    await dbPut(conv);
+    removePendingRequest(convId);
+
+    if (convId === currentConvId) {
+      const aiIdx = conv.messages.indexOf(aiMsg);
+      const row = $chatMessages.querySelector(`[data-msg-idx="${aiIdx}"]`);
+      if (row) {
+        const bubble = row.querySelector('.bubble');
+        if (bubble) { aiMsg._convId = currentConvId; aiMsg._idx = aiIdx; bubble.innerHTML = buildBubbleContent(aiMsg); }
+      } else {
+        renderAllMessages();
+      }
+    }
+    renderConvList();
+  } catch (err) {
+    removePendingRequest(convId);
+    console.error('重新生成失败:', err);
+    // 更新 AI 消息为错误
+    aiMsg = conv.messages.find(m => m._msg_pid === userMsg._msg_id);
+    if (aiMsg) {
+      aiMsg.text = '\u274c 重新生成失败：' + (err.message || '未知错误');
+      aiMsg.isError = true;
+      aiMsg.genImages = [];
+      aiMsg.time = new Date().toISOString();
+      conv.updatedAt = Date.now();
+      await dbPut(conv);
+      if (convId === currentConvId) {
+        const aiIdx = conv.messages.indexOf(aiMsg);
+        const row = $chatMessages.querySelector(`[data-msg-idx="${aiIdx}"]`);
+        if (row) {
+          const bubble = row.querySelector('.bubble');
+          if (bubble) { aiMsg._convId = currentConvId; aiMsg._idx = aiIdx; bubble.innerHTML = buildBubbleContent(aiMsg); }
+        } else {
+          renderAllMessages();
+        }
+      }
+      renderConvList();
+    }
+  }
+}
+
+// ==================== Helpers ====================
+function openLightbox(url) { $lightboxImg.src = url; $lightbox.classList.add('active'); }
+
+function toggleCodeBlock(id) {
+  const block = document.getElementById(id);
+  const arrow = document.getElementById(id + '-arrow');
+  if (!block || !arrow) return;
+  const open = block.classList.toggle('open');
+  arrow.classList.toggle('open', open);
+  arrow.innerHTML = open ? '&#9660;' : '&#9654;';
+}
+
+function formatTime(d) {
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function codeId() { return 'cb-' + Math.random().toString(36).slice(2,8); }
+
+function autoResizeTextarea() {
+  $promptInput.style.height = 'auto';
+  $promptInput.style.height = Math.min($promptInput.scrollHeight, 150) + 'px';
+}
+
+init();
+</script>
+</body>
+</html>
