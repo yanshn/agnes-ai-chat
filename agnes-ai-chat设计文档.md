@@ -477,5 +477,134 @@ async function sendChatMessage(prompt, imageUrls) {
 
 ---
 
-*文档版本：v1.1（修正图片理解支持）*
-*日期：2026-06-08*
+## 十、代码审查发现的 3 个设计缺陷及修复方案
+
+> 以下问题在代码探索阶段发现（2026-06-09），设计文档 v1.1 未覆盖，在此补充。
+
+### 10.1 缺陷一：renderAllMessages 全量重渲染会打断流式输出
+
+**问题**：当前 `renderAllMessages()` 执行 `$chatMessages.innerHTML = ''` 全量清空重建 DOM。
+流式输出中 `sendChatMessage` 正在向某个 DOM 元素追加文本，如果此时触发 `renderAllMessages`
+（如切换对话、重命名对话标题），流式内容全部丢失。
+
+**修复方案**：
+
+1. 流式 AI 消息在 `apiBodies` 中设置 `_streaming: true` 和 `_streamId` 标记
+2. `buildBubbleContent()` 渲染时检测该标记，不用 `msg.text` 渲染，而是读取实时 DOM `textContent` 回填：
+
+```javascript
+// buildBubbleContent() 中 chat 模式的 AI 消息渲染
+if (chatMode === 'chat' && msg.role === 'ai') {
+  let text = msg.text || '';
+  if (msg.apiBodies?._streaming && msg.apiBodies?._streamId) {
+    const el = document.querySelector(`[data-stream-id="${msg.apiBodies._streamId}"]`);
+    if (el) text = el.textContent || text;
+  }
+  html += `<div class="chat-bubble chat-bubble-ai" data-stream-id="${msg.apiBodies._streamId || ''}">${text}<span class="stream-cursor">|</span></div>`;
+}
+```
+
+3. 流结束后 `_streaming = false`，后续渲染直接从 `msg.text` 读取（支持 Markdown 解析）
+
+### 10.2 缺陷二：会话切换时应中断流式输出并提示用户
+
+**问题**：用户在流式输出进行中切换对话，`switchConversation()` 直接切换 `currentConvId`，
+原来对话的流式 SSE 连接仍在运行但没有接收端，造成资源浪费和状态混乱。
+
+**修复方案**——`switchConversation()` 加拦截：
+
+```javascript
+async function switchConversation(id) {
+  const currConv = getCurrentConv();
+  if (currConv && convPendingRequests[currentConvId] > 0) {
+    const confirmed = confirm(
+      '当前对话正在进行中，切换可能导致图片/对话/视频显示错误，确定切换吗？'
+    );
+    if (!confirmed) return;
+  }
+
+  // 中断流式请求
+  if (currentAbortController) {
+    currentAbortController.abort();
+    currentAbortController = null;
+  }
+
+  // 保存当前并切换
+  if (currentConvId && getCurrentConv()) {
+    await saveCurrentConv();
+  }
+  currentConvId = id;
+  updateChatModeUI();
+  // ... 后续逻辑
+}
+```
+
+### 10.3 缺陷三：buildBubbleContent 中 chat 模式分支需要完整实现
+
+**问题**：设计文档中气泡样式伪代码过于简略，未说明 chat 模式如何完整处理消息的所有 UI 元素。
+
+**补充完整代码**：
+
+```javascript
+function buildBubbleContent(msg) {
+  const cMode = getChatMode();
+
+  // ========== Chat 模式 ==========
+  if (cMode === 'chat') {
+    let html = '';
+    const streamId = msg.apiBodies?._streamId || '';
+    const streaming = msg.apiBodies?._streaming === true;
+
+    if (msg.role === 'user') {
+      html += `<div class="chat-bubble chat-bubble-user">${escapeHtml(msg.text)}</div>`;
+      html += getChatMsgActions(msg, 'user');
+    } else {
+      let text = msg.text || '';
+      if (streaming && streamId) {
+        const el = document.querySelector(`[data-stream-id="${streamId}"]`);
+        if (el) text = el.textContent || text;
+      }
+
+      html += `<div class="chat-bubble chat-bubble-ai" data-stream-id="${streamId}">`;
+      if (msg.isError) {
+        html += `<div class="bubble-error">${escapeHtml(text)}</div>`;
+      } else if (streaming) {
+        html += `${escapeHtml(text)}<span class="stream-cursor">|</span>`;
+      } else {
+        html += text; // 流完成后支持 Markdown
+      }
+      html += '</div>';
+      html += getChatMsgActions(msg, 'ai');
+    }
+
+    // 请求体/响应体折叠
+    if (msg.apiBodies?.requestBody) {
+      html += buildApiCollapse(msg);
+    }
+    return html;
+  }
+
+  // ========== 图片/视频模式：现有逻辑 ==========
+  // ... 保持不变
+}
+```
+
+**对话模式 vs 图片/视频模式 UI 差异**：
+
+| 元素 | 图片/视频模式 | 对话模式 |
+|------|:---:|:---:|
+| 消息布局 | 左头像 + 右气泡框 | 纯气泡，无头像 |
+| 用户消息 | 普通文本 div（可点击编辑）| 右对齐蓝色气泡 |
+| AI 消息 | 普通文本 div + 图片/视频网格 | 左对齐灰色气泡 + Markdown |
+| 参考图 | 显示缩略图行 | 不显示 |
+| 生成图 | gen-image-wrapper | 不适用 |
+| 重生成按钮 | 用户消息显示 | **AI 消息显示** |
+| 复制按钮 | 用户消息显示 | 用户和 AI **都显示** |
+| 删除按钮 | 用户消息显示 | **不显示** |
+| 请求体折叠 | 用户+AI | 用户+AI |
+
+---
+
+*文档版本：v1.2*
+*日期：2026-06-09*
+*变更 v1.2：补充代码审查发现的 3 个设计缺陷及修复方案（renderAllMessages 流式保护、会话切换中断保护、buildBubbleContent chat 分支具体化）*
