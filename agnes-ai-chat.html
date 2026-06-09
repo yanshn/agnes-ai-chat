@@ -1317,31 +1317,48 @@ function updateStatus() {
 }
 
 // ==================== Send ====================
-function buildChatMessages(prompt) {
+function buildChatMessages(prompt, stopIdx = undefined) {
   const conv = getCurrentConv();
   if (!conv) return [{ role: 'user', content: prompt }];
-  
+
   const messages = [];
   const sys = $chatSystem.value.trim();
   if (sys) messages.push({ role: 'system', content: sys });
-  
-  for (const msg of conv.messages) {
+
+  // 只收集到 stopIdx 为止（默认全部），且仅包含文字对话模式的消息
+  const maxIdx = stopIdx !== undefined ? stopIdx : conv.messages.length;
+  for (let i = 0; i < maxIdx; i++) {
+    const msg = conv.messages[i];
+    // 排除生图/生视频模式的消息：检查 _endpoint 是否为 chatEndpoint
+    if (!msg.apiBodies || msg.apiBodies._endpoint !== CONFIG.chatEndpoint) continue;
+
     if (msg.role === 'user') {
       messages.push({ role: 'user', content: msg.text });
-    } else if (msg.role === 'ai' && !msg.isError) {
+    } else if (msg.role === 'ai' && !msg.isError && msg.text) {
       messages.push({ role: 'assistant', content: msg.text });
     }
   }
+
   if (prompt) messages.push({ role: 'user', content: prompt });
+
+  // 最多保留 30 条消息（不含 system prompt）
+  const MAX_MSGS = 30;
+  const sysCount = sys ? 1 : 0;
+  if (messages.length > sysCount + MAX_MSGS) {
+    const kept = messages.slice(sysCount).slice(-MAX_MSGS);
+    if (sys) kept.unshift(messages[0]);
+    return kept;
+  }
+
   return messages;
 }
 
-function buildRequestBody(prompt, imageUrls) {
+function buildRequestBody(prompt, imageUrls, stopIdx = undefined) {
   const cMode = getChatMode();
 
   if (cMode === 'chat') {
     // 对话请求体
-    const messages = buildChatMessages(prompt);
+    const messages = buildChatMessages(prompt, stopIdx);
     const body = {
       model: $chatModel.value,
       messages: messages,
@@ -1400,11 +1417,11 @@ async function sendMessage() {
 
   // 对话模式走流式路径
   if (getChatMode() === 'chat') {
-    await sendChatMessage(prompt);
     $promptInput.value = '';
     $promptInput.style.height = 'auto';
     refUrls = [];
     renderRefTags();
+    await sendChatMessage(prompt);
     return;
   }
 
@@ -1554,7 +1571,6 @@ async function sendChatMessage(prompt) {
 
   // 追加 user 消息并持久化
   await addMessageToConv(sourceConvId, 'user', prompt, false, [], [], { requestBody: reqBodyStr, _endpoint: endpoint });
-  // 获取实际 _msg_id（addMessageToConv 内部生成）
   const msgPid = conv.messages[conv.messages.length - 1]._msg_id;
 
   const streamId = 'stream_' + Date.now();
@@ -1562,6 +1578,14 @@ async function sendChatMessage(prompt) {
 
   renderAllMessages();
   scrollToBottom();
+
+  await streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqBody);
+}
+
+// SSE 流式请求（供 sendChatMessage 和 regenerateFromUser 共用）
+async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqBody) {
+  const conv = conversations.find(c => c.id === sourceConvId);
+  if (!conv) return;
 
   currentAbortController = new AbortController();
 
@@ -1632,18 +1656,15 @@ async function sendChatMessage(prompt) {
           if (reasoning) {
             hasThinking = true;
             thinkingText += reasoning;
-            // 实时更新 thinking 区域
             const thinkingEl = document.querySelector(`[data-thinking-id="${streamId}"]`);
             if (thinkingEl) {
               thinkingEl.textContent = thinkingText;
-              // 更新字数统计
               const block = thinkingEl.closest('.thinking-block');
               if (block) {
                 const countEl = block.querySelector('.count');
                 if (countEl) countEl.textContent = `(${thinkingText.length} 字)`;
               }
             } else {
-              // Thinking block 尚未渲染（流开始时 _hasThinking 未设置），动态创建
               const bubbleEl = document.querySelector(`.chat-bubble-ai[data-stream-id="${streamId}"]`);
               if (bubbleEl) {
                 const thinkingId = 'thinking_' + streamId;
@@ -1669,7 +1690,6 @@ async function sendChatMessage(prompt) {
     }
   } catch (err) {
     if (err.name === 'AbortError') {
-      // 被中断，标记不完整
     } else {
       const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
       if (aiMsg && !fullText) { aiMsg.isError = true; aiMsg.text = '读取响应失败'; }
@@ -1890,9 +1910,10 @@ function buildBubbleContent(msg) {
     }
     html += '</div>';
 
-    // AI 消息底部时间（无任何按钮）
+    // AI 消息底部时间和复制按钮
     html += `<div class="msg-meta" style="display:flex;align-items:center;gap:8px;margin-top:4px;padding-left:12px;">`;
     html += `<span class="msg-time">${formatTime(new Date(msg.time))}</span>`;
+    html += `<button class="msg-action-btn" onclick="copyAiMessage(this)">&#x1f4cb; 复制</button>`;
     html += `</div>`;
 
     return html;
@@ -2228,15 +2249,56 @@ async function regenerateFromUser(convId, msgIdx) {
   const userMsg = conv.messages[msgIdx];
   if (!userMsg || userMsg.role !== 'user') return;
 
-  // Chat 模式：删除 AI 回复，重新流式生成
+  // Chat 模式：就地重置 AI 回复并重新流式生成（参考图片模式 regenerate）
   if (getChatMode() === 'chat') {
     const pid = userMsg._msg_id;
-    const aiIdx = conv.messages.findIndex(m => m._msg_pid === pid);
-    if (aiIdx >= 0) { conv.messages.splice(aiIdx, 1); await dbPut(conv); }
-    // 恢复 refUrls 为空（对话模式不需要）
+    let aiMsg = conv.messages.find(m => m._msg_pid === pid);
+    if (!aiMsg) return;
+
+    // 就地重置 AI 消息
+    aiMsg.text = '';
+    aiMsg.isError = false;
+    const streamId = 'stream_' + Date.now();
+    aiMsg.apiBodies = {
+      _streaming: true,
+      _streamId: streamId,
+      _endpoint: CONFIG.chatEndpoint,
+    };
+    aiMsg.time = new Date().toISOString();
+    conv.updatedAt = Date.now();
+    await dbPut(conv);
+
+    // 局部更新 DOM：找到现有 AI 行，更新气泡内容（与图片模式再生一致）
+    if (convId === currentConvId) {
+      const curAiIdx = conv.messages.indexOf(aiMsg);
+      const row = $chatMessages.querySelector(`[data-msg-idx="${curAiIdx}"]`);
+      if (row) {
+        const bubble = row.querySelector('.bubble.ai');
+        if (bubble) {
+          aiMsg._convId = currentConvId;
+          aiMsg._idx = curAiIdx;
+          bubble.innerHTML = buildBubbleContent(aiMsg);
+        }
+      }
+    }
+
     refUrls = [];
-    renderAllMessages();
-    await sendChatMessage(userMsg.text);
+    addPendingRequest(currentConvId);
+
+    // 找到当前用户消息在 conv.messages 中的位置（用于截断消息收集）
+    const userIdx = conv.messages.indexOf(userMsg);
+
+    // 临时移除旧 AI 构建正确的请求体（避免 buildChatMessages 收集到空 AI）
+    const tmpIdx = conv.messages.indexOf(aiMsg);
+    conv.messages.splice(tmpIdx, 1);
+    const reqBody = buildRequestBody('', [], userIdx + 1);
+    conv.messages.splice(tmpIdx, 0, aiMsg);
+
+    // 更新用户消息的请求体
+    userMsg.apiBodies = { requestBody: JSON.stringify(reqBody, null, 2), _endpoint: CONFIG.chatEndpoint };
+    await dbPut(conv);
+
+    await streamChatResponse(pid, streamId, currentConvId, CONFIG.chatEndpoint, reqBody);
     return;
   }
 
@@ -2450,6 +2512,29 @@ function copyText(text) {
     document.body.appendChild(ta); ta.select();
     document.execCommand('copy'); document.body.removeChild(ta);
   }
+}
+// 复制 AI 消息内容（从 DOM 提取，自动排除 thinking 区块）
+function copyAiMessage(btn) {
+  const parentBubble = btn.closest('.bubble.ai');
+  if (!parentBubble) return;
+  const bubble = parentBubble.querySelector('.chat-bubble-ai');
+  if (!bubble) return;
+  const clone = bubble.cloneNode(true);
+  const thinking = clone.querySelector('.thinking-block');
+  if (thinking) thinking.remove();
+  const text = clone.textContent.trim();
+  if (!text) return;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text);
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  }
+  const origHTML = btn.innerHTML;
+  btn.innerHTML = '&#x2705; 已复制';
+  setTimeout(() => { btn.innerHTML = origHTML; }, 1500);
 }
 
 function autoResizeTextarea() {
