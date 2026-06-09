@@ -240,6 +240,93 @@
   }
   .bubble .msg-time { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
 
+  /* Chat bubbles */
+  .chat-bubble {
+    max-width: 80%; padding: 10px 14px;
+    border-radius: var(--radius); line-height: 1.6;
+    font-size: 14px; word-break: break-word; margin-bottom: 4px;
+  }
+  .chat-bubble-user {
+    margin-left: auto; margin-right: 12px;
+    background: var(--accent); color: #fff;
+  }
+  .chat-bubble-ai {
+    margin-right: auto; margin-left: 12px;
+    background: var(--bg-secondary); color: var(--text-primary);
+  }
+  .stream-cursor {
+    display: inline-block; animation: blink 1s step-end infinite;
+    color: var(--text-muted); font-weight: 700;
+  }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+  /* Thinking block */
+  .thinking-block {
+    margin-bottom: 10px; border-radius: var(--radius-sm);
+    background: rgba(78,168,222,0.08); border: 1px solid rgba(78,168,222,0.2);
+    overflow: hidden;
+  }
+  .thinking-header {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; cursor: pointer; user-select: none;
+    font-size: 12px; color: var(--accent); transition: background 0.2s;
+  }
+  .thinking-header:hover { background: rgba(78,168,222,0.1); }
+  .thinking-header .arrow { font-size: 10px; transition: transform 0.2s; }
+  .thinking-header .arrow.open { transform: rotate(90deg); }
+  .thinking-header .icon { font-size: 14px; }
+  .thinking-header .count { font-size: 10px; color: var(--text-muted); }
+  .thinking-content {
+    display: none; padding: 8px 12px 10px 32px;
+    font-size: 12px; line-height: 1.6; color: var(--text-secondary);
+    border-top: 1px solid rgba(78,168,222,0.1);
+    max-height: 300px; overflow-y: auto;
+  }
+  .thinking-content.open { display: block; }
+  .thinking-content::-webkit-scrollbar { width: 4px; }
+  .thinking-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Markdown rendered content */
+  .md-content { font-size: 14px; line-height: 1.7; }
+  .md-content p { margin: 0 0 8px 0; }
+  .md-content p:last-child { margin-bottom: 0; }
+  .md-content h1, .md-content h2, .md-content h3, .md-content h4 {
+    margin: 12px 0 6px 0; color: var(--text-primary); font-weight: 600;
+  }
+  .md-content h1 { font-size: 18px; }
+  .md-content h2 { font-size: 16px; }
+  .md-content h3 { font-size: 14px; }
+  .md-content ul, .md-content ol { margin: 6px 0; padding-left: 20px; }
+  .md-content li { margin: 3px 0; }
+  .md-content code {
+    background: rgba(78,168,222,0.1); padding: 2px 5px; border-radius: 3px;
+    font-family: 'Cascadia Code','Fira Code',Consolas,monospace; font-size: 12px;
+  }
+  .md-content pre {
+    background: #0d1117; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 10px 12px; margin: 8px 0; overflow-x: auto; font-size: 12px;
+  }
+  .md-content pre code { background: none; padding: 0; }
+  .md-content blockquote {
+    margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--accent);
+    background: rgba(78,168,222,0.05); color: var(--text-secondary);
+  }
+  .md-content a { color: var(--accent); text-decoration: none; }
+  .md-content a:hover { text-decoration: underline; }
+  .md-content table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+  .md-content th, .md-content td { border: 1px solid var(--border); padding: 6px 10px; }
+  .md-content th { background: rgba(78,168,222,0.1); }
+  .md-content hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+
+  .msg-meta { margin-left: 12px; }
+  .msg-action-btn {
+    background: none; border: 0.5px solid var(--border);
+    color: var(--text-muted); cursor: pointer;
+    padding: 3px 8px; border-radius: var(--radius-sm);
+    font-size: 11px; transition: var(--transition);
+  }
+  .msg-action-btn:hover { color: var(--text-primary); border-color: var(--accent); }
+
   /* Code blocks */
   .code-toggle {
     display: inline-flex; align-items: center; gap: 6px;
@@ -416,6 +503,8 @@
     .btn-send { width: 40px; height: 40px; }
   }
 </style>
+<!-- Marked.js for Markdown rendering -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
 
@@ -530,6 +619,34 @@
     </div>
 
     <div class="sidebar-section">
+      <h3 class="sidebar-group-title">对话配置</h3>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">模型</label>
+      <select id="chatModel">
+        <option value="agnes-2.0-flash">Agnes-2.0-Flash</option>
+      </select>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">系统提示词</label>
+      <textarea id="chatSystem" rows="3" placeholder="设定 AI 角色和行为（可选）……"></textarea>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">温度: <span id="chatTempVal">0.7</span></label>
+      <input type="range" id="chatTemp" min="0" max="2" step="0.1" value="0.7" />
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">最大 Token</label>
+      <input type="number" id="chatMaxTokens" value="4096" min="1" max="65535" />
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="chatThinking" />
+        深度思考
+      </label>
+    </div>
+
+    <div class="sidebar-section">
       <h3 class="sidebar-group-title">说明</h3>
     </div>
     <div class="sidebar-hint">API 免费，在
@@ -562,6 +679,7 @@
           <div id="chatModeMenu" style="display:none;position:absolute;top:100%;left:0;z-index:100;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 4px 12px rgba(0,0,0,0.15);min-width:100px;padding:4px 0;">
             <div data-mode="image" style="padding:8px 16px;cursor:pointer;font-size:13px;white-space:nowrap;">&#x1f3a8; 图片</div>
             <div data-mode="video" style="padding:8px 16px;cursor:pointer;font-size:13px;">&#x1f3ac; 视频</div>
+            <div data-mode="chat" style="padding:8px 16px;cursor:pointer;font-size:13px;">&#x1f4ac; 对话</div>
           </div>
         </div>
         <input type="text" id="refUrlInput" placeholder="&#x1f517; 粘贴参考图 URL（可选，支持多个，用逗号分隔）" />
@@ -631,11 +749,13 @@ async function dbDelete(id) {
 const CONFIG = {
   imageEndpoint: 'https://apihub.agnes-ai.com/v1/images/generations',
   videoEndpoint: 'https://apihub.agnes-ai.com/v1/videos',
+  chatEndpoint: 'https://apihub.agnes-ai.com/v1/chat/completions',
 };
 
 let conversations = [];      // [{ id, name, messages, createdAt, updatedAt }]
 let currentConvId = null;
 let apiKey = '';
+let currentAbortController = null;  // 流式请求的 AbortController
 let refUrls = [];
 let convPendingRequests = {};  // { convId: count } — pending 请求计数，0=idle，>0=loading
 
@@ -659,6 +779,11 @@ const $convNameDisp = document.getElementById('convNameDisplay');
 const $lightbox     = document.getElementById('lightbox');
 const $lightboxImg  = document.getElementById('lightboxImg');
 const $convList     = document.getElementById('convList');
+const $chatModel    = document.getElementById('chatModel');
+const $chatSystem   = document.getElementById('chatSystem');
+const $chatTemp     = document.getElementById('chatTemp');
+const $chatMaxTokens = document.getElementById('chatMaxTokens');
+const $chatThinking = document.getElementById('chatThinking');
 
 // ==================== Conversation helpers ====================
 function getCurrentConv() {
@@ -707,6 +832,12 @@ async function createConversation(activate = true) {
 
 async function switchConversation(id) {
   if (id === currentConvId) return;
+  // 检查是否有进行中的请求
+  if (convPendingRequests[currentConvId] > 0) {
+    if (!confirm('当前对话正在进行中，切换可能导致图片/对话/视频显示错误，确定切换吗？')) return;
+  }
+  // 中断流式请求
+  if (currentAbortController) { currentAbortController.abort(); currentAbortController = null; }
   // 保存当前
   if (currentConvId && getCurrentConv()) {
     await saveCurrentConv();
@@ -869,6 +1000,12 @@ async function init() {
   document.getElementById('numFrames').value = localStorage.getItem('agnes_video_frames') || '121';
   document.getElementById('frameRate').value = localStorage.getItem('agnes_video_fps') || '24';
   $seedInput.value = localStorage.getItem('agnes_seed') || '';
+  $chatModel.value = localStorage.getItem('agnes_chat_model') || 'agnes-2.0-flash';
+  $chatSystem.value = localStorage.getItem('agnes_chat_system') || '';
+  $chatTemp.value = localStorage.getItem('agnes_chat_temp') || '0.7';
+  document.getElementById('chatTempVal').textContent = $chatTemp.value;
+  $chatMaxTokens.value = localStorage.getItem('agnes_chat_max_tokens') || '4096';
+  $chatThinking.checked = localStorage.getItem('agnes_chat_thinking') === 'true';
 
   // 加载历史对话
   conversations = await dbGetAll();
@@ -903,6 +1040,14 @@ async function init() {
   document.getElementById('numFrames').addEventListener('change', (e) => { localStorage.setItem('agnes_video_frames', e.target.value); });
   document.getElementById('frameRate').addEventListener('change', (e) => { localStorage.setItem('agnes_video_fps', e.target.value); });
   $seedInput.addEventListener('input', () => { localStorage.setItem('agnes_seed', $seedInput.value.trim()); });
+  $chatModel.addEventListener('change', () => { localStorage.setItem('agnes_chat_model', $chatModel.value); });
+  $chatSystem.addEventListener('input', () => { localStorage.setItem('agnes_chat_system', $chatSystem.value); });
+  $chatTemp.addEventListener('input', () => {
+    localStorage.setItem('agnes_chat_temp', $chatTemp.value);
+    document.getElementById('chatTempVal').textContent = $chatTemp.value;
+  });
+  $chatMaxTokens.addEventListener('input', () => { localStorage.setItem('agnes_chat_max_tokens', $chatMaxTokens.value); });
+  $chatThinking.addEventListener('change', () => { localStorage.setItem('agnes_chat_thinking', $chatThinking.checked); });
 
   document.getElementById('settingsToggle').addEventListener('click', () => {
     const panel = document.getElementById('settingsPanel');
@@ -1013,7 +1158,6 @@ async function init() {
   $btnSend.addEventListener('click', sendMessage);
   $lightbox.addEventListener('click', () => $lightbox.classList.remove('active'));
   $promptInput.addEventListener('input', autoResizeTextarea);
-  $promptInput.addEventListener('input', autoResizeTextarea);
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.ctrlKey && !e.shiftKey) {
@@ -1044,10 +1188,25 @@ async function setChatMode(mode) {
 function updateChatModeUI() {
   const mode = getChatMode();
   const $btnChatMode = document.getElementById('btnChatMode');
-  $btnChatMode.innerHTML = mode === 'video' ? '&#x1f3ac;' : '&#x1f3a8;';
-  $promptInput.placeholder = mode === 'video'
-    ? '描述你想要生成的视频：主体、动作、场景、镜头运动、光照、风格……\n提示：按 Ctrl+Enter 发送'
-    : '描述你想要生成的图像，或用自然语言描述如何编辑参考图……\n提示：按 Ctrl+Enter 发送';
+  const $refUrlInput = document.getElementById('refUrlInput');
+  const $btnPickImage = document.getElementById('btnPickImage');
+  
+  if (mode === 'video') {
+    $btnChatMode.innerHTML = '&#x1f3ac;';
+    $promptInput.placeholder = '描述你想要生成的视频：主体、动作、场景、镜头运动、光照、风格……\n提示：按 Ctrl+Enter 发送';
+    $refUrlInput.style.display = '';
+    if ($btnPickImage) $btnPickImage.style.display = '';
+  } else if (mode === 'chat') {
+    $btnChatMode.innerHTML = '&#x1f4ac;';
+    $promptInput.placeholder = '输入消息……\n提示：按 Ctrl+Enter 发送';
+    $refUrlInput.style.display = '';
+    if ($btnPickImage) $btnPickImage.style.display = '';
+  } else {
+    $btnChatMode.innerHTML = '&#x1f3a8;';
+    $promptInput.placeholder = '描述你想要生成的图像，或用自然语言描述如何编辑参考图……\n提示：按 Ctrl+Enter 发送';
+    $refUrlInput.style.display = '';
+    if ($btnPickImage) $btnPickImage.style.display = '';
+  }
 }
 
 // ==================== 图片格式转换 ====================
@@ -1158,8 +1317,43 @@ function updateStatus() {
 }
 
 // ==================== Send ====================
+function buildChatMessages(prompt) {
+  const conv = getCurrentConv();
+  if (!conv) return [{ role: 'user', content: prompt }];
+  
+  const messages = [];
+  const sys = $chatSystem.value.trim();
+  if (sys) messages.push({ role: 'system', content: sys });
+  
+  for (const msg of conv.messages) {
+    if (msg.role === 'user') {
+      messages.push({ role: 'user', content: msg.text });
+    } else if (msg.role === 'ai' && !msg.isError) {
+      messages.push({ role: 'assistant', content: msg.text });
+    }
+  }
+  if (prompt) messages.push({ role: 'user', content: prompt });
+  return messages;
+}
+
 function buildRequestBody(prompt, imageUrls) {
   const cMode = getChatMode();
+
+  if (cMode === 'chat') {
+    // 对话请求体
+    const messages = buildChatMessages(prompt);
+    const body = {
+      model: $chatModel.value,
+      messages: messages,
+      temperature: parseFloat($chatTemp.value),
+      max_tokens: parseInt($chatMaxTokens.value),
+      stream: true,
+    };
+    if ($chatThinking.checked) {
+      body.chat_template_kwargs = { enable_thinking: true };
+    }
+    return body;
+  }
 
   if (cMode === 'video') {
     // 视频请求体
@@ -1201,6 +1395,16 @@ async function sendMessage() {
   if (!prompt) return;
   if (!apiKey) {
     addMessage('ai', '\u26a0\ufe0f 请在左侧设置面板输入 Agnes API Key（platform.agnes-ai.com 免费获取）。', true);
+    return;
+  }
+
+  // 对话模式走流式路径
+  if (getChatMode() === 'chat') {
+    await sendChatMessage(prompt);
+    $promptInput.value = '';
+    $promptInput.style.height = 'auto';
+    refUrls = [];
+    renderRefTags();
     return;
   }
 
@@ -1332,7 +1536,163 @@ async function sendMessage() {
 }
 
 function getEndpoint() {
-  return getChatMode() === 'video' ? CONFIG.videoEndpoint : CONFIG.imageEndpoint;
+  const mode = getChatMode();
+  if (mode === 'video') return CONFIG.videoEndpoint;
+  if (mode === 'chat') return CONFIG.chatEndpoint;
+  return CONFIG.imageEndpoint;
+}
+
+async function sendChatMessage(prompt) {
+  const conv = getCurrentConv();
+  if (!conv) return;
+  const sourceConvId = currentConvId;
+  addPendingRequest(sourceConvId);
+
+  const reqBody = buildRequestBody(prompt, []);
+  const reqBodyStr = JSON.stringify(reqBody, null, 2);
+  const endpoint = CONFIG.chatEndpoint;
+
+  // 追加 user 消息并持久化
+  await addMessageToConv(sourceConvId, 'user', prompt, false, [], [], { requestBody: reqBodyStr, _endpoint: endpoint });
+  // 获取实际 _msg_id（addMessageToConv 内部生成）
+  const msgPid = conv.messages[conv.messages.length - 1]._msg_id;
+
+  const streamId = 'stream_' + Date.now();
+  await addMessageToConv(sourceConvId, 'ai', '', false, [], [], { _endpoint: endpoint, _msg_pid: msgPid, _streamId: streamId, _streaming: true });
+
+  renderAllMessages();
+  scrollToBottom();
+
+  currentAbortController = new AbortController();
+
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify(reqBody),
+      signal: currentAbortController.signal,
+    });
+  } catch (err) {
+    removePendingRequest(sourceConvId);
+    currentAbortController = null;
+    if (err.name === 'AbortError') {
+      const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
+      if (aiMsg) { aiMsg.apiBodies._streaming = false; aiMsg.apiBodies._incomplete = true; await dbPut(conv); }
+    } else {
+      const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
+      if (aiMsg) { aiMsg.text = '网络连接失败，请检查网络后重试'; aiMsg.isError = true; aiMsg.apiBodies._streaming = false; await dbPut(conv); }
+    }
+    renderAllMessages();
+    return;
+  }
+
+  if (!response.ok) {
+    removePendingRequest(sourceConvId);
+    currentAbortController = null;
+    const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
+    if (aiMsg) {
+      const status = response.status;
+      aiMsg.apiBodies._streaming = false;
+      aiMsg.isError = true;
+      if (status === 401) aiMsg.text = 'API Key 无效，请检查配置';
+      else if (status === 429) aiMsg.text = '请求过于频繁，请稍后重试';
+      else if (status >= 500) aiMsg.text = `服务暂时不可用 (HTTP ${status})，请稍后重试`;
+      else aiMsg.text = `请求失败 (HTTP ${status})`;
+      await dbPut(conv);
+    }
+    renderAllMessages();
+    return;
+  }
+
+  // SSE 流式读取
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  let thinkingText = '';
+  let buffer = '';
+  let hasThinking = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6);
+        if (data === '[DONE]') continue;
+        try {
+          const json = JSON.parse(data);
+          const content = json.choices?.[0]?.delta?.content || '';
+          const reasoning = json.choices?.[0]?.delta?.reasoning_content || '';
+          fullText += content;
+          if (reasoning) {
+            hasThinking = true;
+            thinkingText += reasoning;
+            // 实时更新 thinking 区域
+            const thinkingEl = document.querySelector(`[data-thinking-id="${streamId}"]`);
+            if (thinkingEl) {
+              thinkingEl.textContent = thinkingText;
+              // 更新字数统计
+              const block = thinkingEl.closest('.thinking-block');
+              if (block) {
+                const countEl = block.querySelector('.count');
+                if (countEl) countEl.textContent = `(${thinkingText.length} 字)`;
+              }
+            } else {
+              // Thinking block 尚未渲染（流开始时 _hasThinking 未设置），动态创建
+              const bubbleEl = document.querySelector(`.chat-bubble-ai[data-stream-id="${streamId}"]`);
+              if (bubbleEl) {
+                const thinkingId = 'thinking_' + streamId;
+                const block = document.createElement('div');
+                block.className = 'thinking-block';
+                block.innerHTML = `
+                  <div class="thinking-header" onclick="toggleThinkingBlock('${thinkingId}')">
+                    <span class="arrow open" id="${thinkingId}-arrow">&#9654;</span>
+                    <span class="icon">&#x1f4ad;</span>
+                    <span>深度思考</span>
+                    <span class="count">(${thinkingText.length} 字)</span>
+                  </div>
+                  <div class="thinking-content open" id="${thinkingId}" data-thinking-id="${streamId}">${escapeHtml(thinkingText)}</div>
+                `;
+                bubbleEl.insertBefore(block, bubbleEl.firstChild);
+              }
+            }
+          }
+          const el = document.querySelector(`[data-stream-id="${streamId}"]`);
+          if (el) { el.textContent = fullText; scrollToBottom(); }
+        } catch {}
+      }
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      // 被中断，标记不完整
+    } else {
+      const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
+      if (aiMsg && !fullText) { aiMsg.isError = true; aiMsg.text = '读取响应失败'; }
+    }
+  }
+
+  // 流结束，最终保存
+  removePendingRequest(sourceConvId);
+  currentAbortController = null;
+  const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
+  if (aiMsg) {
+    aiMsg.text = fullText || aiMsg.text || '(空响应)';
+    aiMsg.apiBodies._streaming = false;
+    aiMsg.apiBodies._streamId = null;
+    if (hasThinking) {
+      aiMsg.apiBodies._hasThinking = true;
+      aiMsg.apiBodies._thinkingText = thinkingText;
+    }
+    aiMsg.time = new Date().toISOString();
+    await dbPut(conv);
+  }
+  renderAllMessages();
+  scrollToBottom();
 }
 
 async function callAgnesAPI(prompt, imageUrls) {
@@ -1390,6 +1750,153 @@ function buildBubbleContent(msg) {
   }
   const isUser = msg.role === 'user';
   let html = '';
+
+  // Chat 模式下的消息渲染
+  if (getChatMode() === 'chat') {
+    const streamId = msg.apiBodies?._streamId || '';
+    const streaming = msg.apiBodies?._streaming === true;
+
+    // 判断消息是否实际上是图片/视频消息（通过内容特征判断）
+    const isImageOrVideoMsg = (msg.genImages && msg.genImages.length > 0) ||
+                              (msg.apiBodies && msg.apiBodies.videoTaskId);
+
+    // ========== 是图片/视频消息：在 Chat 模式下仍按原有方式渲染 ==========
+    if (isImageOrVideoMsg) {
+      // 参考图
+      if (msg.refImages && msg.refImages.length > 0) {
+        html += '<div class="ref-images">';
+        msg.refImages.forEach(url => {
+          html += `<img src="${escapeHtml(url)}" alt="参考图" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+        });
+        html += '</div>';
+      }
+      // 文本
+      html += `<div class="msg-text">${msg.text}</div>`;
+      // 生成图
+      if (msg.genImages && msg.genImages.length > 0) {
+        html += '<div class="gen-image-wrapper"><span class="gen-label">&#x1f5bc; 生成结果</span>';
+        msg.genImages.forEach(url => {
+          html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+        });
+        html += '</div>';
+      }
+      // 视频任务
+      if (msg.apiBodies && msg.apiBodies.videoTaskId) {
+        const vt = msg.apiBodies;
+        html += '<div class="video-task">';
+        if (vt.videoStatus === 'completed' && vt.videoUrl) {
+          html += `<div class="gen-label">&#x1f3ac; 视频已生成</div>`;
+          html += `<div class="video-player"><video controls src="${escapeHtml(vt.videoUrl)}"></video></div>`;
+        } else if (vt.videoStatus === 'failed') {
+          html += `<div class="msg-text" style="color:var(--error);">&#x274c; 视频生成失败</div>`;
+        } else {
+          const pct = vt.videoProgress || 0;
+          const statusText = vt.videoStatus === 'queued' ? '排队等待中' : '正在生成视频';
+          html += `<div class="msg-text">&#x23f3; ${statusText}（task: ${escapeHtml(vt.videoTaskId.slice(0, 12))}…）</div>`;
+          if (pct > 0) {
+            html += `<div class="video-progress-bar"><div class="video-progress-fill" style="width:${pct}%"></div></div>`;
+            html += `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">进度 ${pct}%</div>`;
+          }
+          html += '<div style="display:flex;align-items:center;gap:6px;white-space:nowrap">';
+          html += `<button class="btn-video-refresh" onclick="event.stopPropagation();refreshVideoTask('${msg._convId}',${msg._idx},'${vt.videoTaskId}')">&#x1f504; 刷新状态</button>`;
+          html += `<button class="btn-video-refresh" title="每10秒刷新一次" onclick="event.stopPropagation();toggleVideoPause('${msg._convId}',${msg._idx})">${vt.videoPaused ? '&#x25b6; 恢复自刷' : '&#x23f8; 暂停自刷'}</button>`;
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+      // 元信息
+      html += `<div class="msg-time">${formatTime(new Date(msg.time))}</div>`;
+      // 按钮
+      html += '<div class="msg-actions">';
+      html += `<button class="btn-act" title="复制提示词" onclick="event.stopPropagation();copyUserPrompt('${msg._convId}',${msg._idx})">&#x1f4cb;</button>`;
+      html += `<button class="btn-del" title="删除此请求和对应响应" onclick="event.stopPropagation();deleteMsgPair('${msg._convId}',${msg._idx})">&#x1f5d1;</button>`;
+      html += `<button class="btn-act" title="重新生成" onclick="event.stopPropagation();regenerateFromUser('${msg._convId}',${msg._idx})">&#x1f504;</button>`;
+      html += '</div>';
+      // 请求体/响应体
+      if (msg.apiBodies?.requestBody) {
+        const uid = codeId();
+        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
+        html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
+      }
+      if (msg.apiBodies?.responseBody) {
+        const uid = codeId();
+        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 响应体</button>`;
+        html += `<div class="code-block" id="${uid}"><div class="code-label">RESPONSE</div>${escapeHtml(msg.apiBodies.responseBody)}</div>`;
+      }
+      return html;
+    }
+
+    // ========== 用户消息（参考图消息）==========
+    if (isUser) {
+      // 显示参考图缩略图
+      if (msg.refImages && msg.refImages.length > 0) {
+        html += '<div class="ref-images" style="margin-bottom:6px;">';
+        msg.refImages.forEach(url => {
+          html += `<img src="${escapeHtml(url)}" alt="参考图" style="max-width:120px;max-height:80px;border-radius:6px;cursor:pointer;" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+        });
+        html += '</div>';
+      }
+      html += `<div class="chat-bubble chat-bubble-user">${escapeHtml(msg.text)}</div>`;
+      html += '<div class="msg-meta" style="display:flex;align-items:center;gap:8px;margin-top:4px;padding-left:12px;">';
+      html += `<span class="msg-time">${formatTime(new Date(msg.time))}</span>`;
+      html += `<button class="msg-action-btn" onclick="copyText('${escapeAttr(msg.text)}')">&#x1f4cb; 复制</button>`;
+      html += `<button class="msg-action-btn" onclick="event.stopPropagation();deleteMsgPair('${msg._convId}',${msg._idx})">&#x1f5d1;</button>`;
+      html += `<button class="msg-action-btn" onclick="event.stopPropagation();regenerateFromUser('${msg._convId}',${msg._idx})">&#x21bb; 重生成</button>`;
+      html += '</div>';
+      if (msg.apiBodies?.requestBody) {
+        const uid = codeId();
+        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')" style="margin-top:4px;margin-left:12px;"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体</button>`;
+        html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
+      }
+      return html;
+    }
+
+    // ========== AI 消息（纯对话气泡，无按钮）==========
+    let text = msg.text || '';
+    if (streaming && streamId) {
+      const el = document.querySelector(`[data-stream-id="${streamId}"]`);
+      if (el) text = el.textContent || text;
+    }
+
+    html += `<div class="chat-bubble chat-bubble-ai" data-stream-id="${streamId}">`;
+
+    // Thinking 区块（流式输出过程中也显示）
+    const hasThinking = msg.apiBodies?._hasThinking === true;
+    const thinkingText = msg.apiBodies?._thinkingText || '';
+    if (hasThinking) {
+      const thinkingId = 'thinking_' + streamId;
+      const thinkingLen = thinkingText.length;
+      html += `<div class="thinking-block">`;
+      html += `<div class="thinking-header" onclick="toggleThinkingBlock('${thinkingId}')">`;
+      html += `<span class="arrow open" id="${thinkingId}-arrow">&#9654;</span>`;
+      html += `<span class="icon">&#x1f4ad;</span>`;
+      html += `<span>深度思考</span>`;
+      html += `<span class="count">(${thinkingLen} 字)</span>`;
+      html += `</div>`;
+      html += `<div class="thinking-content open" id="${thinkingId}" data-thinking-id="${streamId}">${escapeHtml(thinkingText)}</div>`;
+      html += `</div>`;
+    }
+
+    if (msg.isError) {
+      html += `<div style="color:var(--error);">${escapeHtml(text)}</div>`;
+    } else if (streaming) {
+      html += `<div class="md-content">${escapeHtml(text)}<span class="stream-cursor">|</span></div>`;
+    } else {
+      try {
+        html += `<div class="md-content">${marked.parse(text)}</div>`;
+      } catch {
+        html += `<div class="md-content">${escapeHtml(text)}</div>`;
+      }
+    }
+    html += '</div>';
+
+    // AI 消息底部时间（无任何按钮）
+    html += `<div class="msg-meta" style="display:flex;align-items:center;gap:8px;margin-top:4px;padding-left:12px;">`;
+    html += `<span class="msg-time">${formatTime(new Date(msg.time))}</span>`;
+    html += `</div>`;
+
+    return html;
+  }
 
   if (msg.refImages && msg.refImages.length > 0) {
     html += '<div class="ref-images">';
@@ -1721,6 +2228,18 @@ async function regenerateFromUser(convId, msgIdx) {
   const userMsg = conv.messages[msgIdx];
   if (!userMsg || userMsg.role !== 'user') return;
 
+  // Chat 模式：删除 AI 回复，重新流式生成
+  if (getChatMode() === 'chat') {
+    const pid = userMsg._msg_id;
+    const aiIdx = conv.messages.findIndex(m => m._msg_pid === pid);
+    if (aiIdx >= 0) { conv.messages.splice(aiIdx, 1); await dbPut(conv); }
+    // 恢复 refUrls 为空（对话模式不需要）
+    refUrls = [];
+    renderAllMessages();
+    await sendChatMessage(userMsg.text);
+    return;
+  }
+
   // 从原请求体提取参数，但用最新的提示词文本
   let reqParams = {};
   try {
@@ -1889,6 +2408,12 @@ async function regenerateFromUser(convId, msgIdx) {
   }
 }
 
+// Configure marked.js
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
+
 // ==================== Helpers ====================
 function openLightbox(url) { $lightboxImg.src = url; $lightbox.classList.add('active'); }
 
@@ -1901,11 +2426,31 @@ function toggleCodeBlock(id) {
   arrow.innerHTML = open ? '&#9660;' : '&#9654;';
 }
 
+function toggleThinkingBlock(id) {
+  const content = document.getElementById(id);
+  const arrow = document.getElementById(id + '-arrow');
+  if (!content || !arrow) return;
+  const open = content.classList.toggle('open');
+  arrow.classList.toggle('open', open);
+  arrow.innerHTML = open ? '&#9660;' : '&#9654;';
+}
+
 function formatTime(d) {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function escapeAttr(s) { return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function codeId() { return 'cb-' + Math.random().toString(36).slice(2,8); }
+function copyText(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text);
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  }
+}
 
 function autoResizeTextarea() {
   $promptInput.style.height = 'auto';

@@ -605,6 +605,101 @@ function buildBubbleContent(msg) {
 
 ---
 
-*文档版本：v1.2*
+*文档版本：v1.3*
 *日期：2026-06-09*
 *变更 v1.2：补充代码审查发现的 3 个设计缺陷及修复方案（renderAllMessages 流式保护、会话切换中断保护、buildBubbleContent chat 分支具体化）*
+*变更 v1.3：新增 Thinking 内容展示（reasoning_content 解析、展开/折叠功能）和 Markdown 渲染支持（引入 marked.js）*
+
+---
+
+## 十一、Thinking 内容展示（v1.3 新增）
+
+### 11.1 SSE 中的 thinking 字段
+
+Agnes-2.0-Flash 在深度思考模式下，SSE 流式响应中会包含 `reasoning_content` 字段：
+
+```json
+{
+  "choices": [{
+    "delta": {
+      "content": "...",
+      "reasoning_content": "正在思考..."
+    }
+  }]
+}
+```
+
+### 11.2 实现方案
+
+1. **流式读取时捕获**：`sendChatMessage` 中同时提取 `delta.content` 和 `delta.reasoning_content`
+2. **实时预览**：thinking 内容实时追加到 DOM（`data-thinking-id`）
+3. **持久化存储**：流结束后保存到 `msg.apiBodies._thinkingText`
+4. **折叠/展开 UI**：点击头部切换显示隐藏
+
+### 11.3 CSS 样式
+
+```css
+.thinking-block {
+  margin-bottom: 10px; border-radius: var(--radius-sm);
+  background: rgba(78,168,222,0.08); border: 1px solid rgba(78,168,222,0.2);
+}
+.thinking-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; cursor: pointer; font-size: 12px; color: var(--accent);
+}
+.thinking-content {
+  display: none; padding: 8px 12px 10px 32px;
+  font-size: 12px; line-height: 1.6; color: var(--text-secondary);
+  border-top: 1px solid rgba(78,168,222,0.1); max-height: 300px; overflow-y: auto;
+}
+.thinking-content.open { display: block; }
+```
+
+---
+
+## 十二、Markdown 渲染（v1.3 新增）
+
+### 12.1 引入 marked.js
+
+使用 CDN 引入轻量级 Markdown 解析库：
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+```
+
+配置：
+
+```javascript
+marked.setOptions({
+  breaks: true,   // 换行转换为 <br>
+  gfm: true,      // GitHub 风格 Markdown
+});
+```
+
+### 12.2 渲染时机
+
+- **流式输出中**：不使用 Markdown（纯文本 + 转义）
+- **流结束后**：使用 `marked.parse(text)` 渲染完整回复
+
+### 12.3 支持的 Markdown 语法
+
+| 语法 | 渲染结果 |
+|------|---------|
+| `# H1` / `## H2` | 标题 |
+| `**粗体**` / `*斜体*` | 格式化文本 |
+| `列表` / `1. 有序列表` | HTML 列表 |
+| `` `行内代码` `` | 代码片段 |
+| ```` ```代码块``` ```` | 代码块 |
+| `> 引用` | 引用块 |
+| `[链接](url)` | 超链接 |
+| `---` | 分割线 |
+| `表格` | HTML 表格 |
+
+### 12.4 Markdown 内容样式
+
+```css
+.md-content h1, .md-content h2, .md-content h3 { color: var(--text-primary); }
+.md-content code { background: rgba(78,168,222,0.1); padding: 2px 5px; border-radius: 3px; }
+.md-content pre { background: #0d1117; border: 1px solid var(--border); padding: 10px 12px; }
+.md-content blockquote { border-left: 3px solid var(--accent); background: rgba(78,168,222,0.05); }
+```
