@@ -1180,6 +1180,25 @@ function getChatMode() {
   return (conv && conv.chatMode) ? conv.chatMode : 'image';
 }
 
+// 获取某条消息的生成模式：
+// - user 消息直接读 _mode
+// - AI 消息通过 _msg_pid 查找配对的 user 消息的 _mode
+// - 兜底返回当前对话模式
+function getMsgMode(msg) {
+  if (!msg) return getChatMode();
+  // 找到配对的消息（user → 直接用；AI → 找配对的 user）
+  const conv = getCurrentConv();
+  if (!conv) return getChatMode();
+  let pairMsg;
+  if (msg.role === 'user') {
+    pairMsg = msg;
+  } else {
+    const pid = msg._msg_pid;
+    if (pid) pairMsg = conv.messages.find(m => m._msg_id === pid);
+  }
+  return (pairMsg && pairMsg._mode) ? pairMsg._mode : getChatMode();
+}
+
 async function setChatMode(mode) {
   if (!currentConvId) return;
   const conv = getCurrentConv();
@@ -1358,8 +1377,8 @@ function buildChatMessages(prompt, stopIdx = undefined) {
   return messages;
 }
 
-function buildRequestBody(prompt, imageUrls, stopIdx = undefined) {
-  const cMode = getChatMode();
+function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride = null) {
+  const cMode = modeOverride || getChatMode();
 
   if (cMode === 'chat') {
     // 对话请求体
@@ -1751,6 +1770,7 @@ async function addMessageToConv(convId, role, text, isError = false, refImages =
   // 消息关联：user 消息生成 _msg_id，AI 消息记录 _msg_pid
   if (role === 'user') {
     msg._msg_id = Date.now();
+    msg._mode = getChatMode();   // 记住本轮次使用的生成模式
   }
   if (apiBodies && apiBodies._msg_pid) {
     msg._msg_pid = apiBodies._msg_pid;
@@ -1772,8 +1792,9 @@ function buildBubbleContent(msg) {
   const isUser = msg.role === 'user';
   let html = '';
 
-  // Chat 模式下的消息渲染
-  if (getChatMode() === 'chat') {
+  // 根据消息自身的模式渲染（而非全局对话模式）
+  const msgMode = getMsgMode(msg);
+  if (msgMode === 'chat') {
     const streamId = msg.apiBodies?._streamId || '';
     const streaming = msg.apiBodies?._streaming === true;
 
@@ -2250,8 +2271,9 @@ async function regenerateFromUser(convId, msgIdx) {
   const userMsg = conv.messages[msgIdx];
   if (!userMsg || userMsg.role !== 'user') return;
 
-  // Chat 模式：就地重置 AI 回复并重新流式生成（参考图片模式 regenerate）
-  if (getChatMode() === 'chat') {
+  // 以本轮次的原始模式重生成（回退兼容旧消息无 _mode 字段）
+  const roundMode = userMsg._mode || getChatMode();
+  if (roundMode === 'chat') {
     const pid = userMsg._msg_id;
     let aiMsg = conv.messages.find(m => m._msg_pid === pid);
     if (!aiMsg) return;
@@ -2292,7 +2314,7 @@ async function regenerateFromUser(convId, msgIdx) {
     // 临时移除旧 AI 构建正确的请求体（避免 buildChatMessages 收集到空 AI）
     const tmpIdx = conv.messages.indexOf(aiMsg);
     conv.messages.splice(tmpIdx, 1);
-    const reqBody = buildRequestBody('', [], userIdx + 1);
+    const reqBody = buildRequestBody('', [], userIdx + 1, roundMode);
     conv.messages.splice(tmpIdx, 0, aiMsg);
 
     // 更新用户消息的请求体
@@ -2315,7 +2337,7 @@ async function regenerateFromUser(convId, msgIdx) {
   addPendingRequest(convId);
 
   // ═══ 阶段1：先设为 loading 态 ═══
-  const isVideo = getChatMode() === 'video';
+  const isVideo = roundMode === 'video';
   let aiMsg = conv.messages.find(m => m._msg_pid === userMsg._msg_id);
 
   if (aiMsg) {
