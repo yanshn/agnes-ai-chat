@@ -130,14 +130,18 @@
     display: none; flex-direction: column; gap: 10px;
     padding: 0 16px 16px;
     border-top: 1px solid var(--border);
-    overflow-y: auto; max-height: 260px;
-    flex-shrink: 0;
+    overflow-y: auto; max-height: 70vh;
+    flex-shrink: 1;
   }
   .settings-panel.open { display: flex; }
   .sidebar-section { display: flex; flex-direction: column; gap: 4px; }
   .sidebar-label {
     font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
     color: var(--text-muted);
+  }
+  .sidebar-group-title {
+    font-size: 12px; font-weight: 600; color: var(--text-primary);
+    margin: 0 0 0 0; padding: 4px 0;
   }
   .sidebar input, .sidebar select {
     width: 100%; padding: 8px 10px;
@@ -438,61 +442,29 @@
   </div>
   <div class="settings-panel" id="settingsPanel">
     <div class="sidebar-section">
+      <h3 class="sidebar-group-title">通用配置</h3>
+    </div>
+    <div class="sidebar-section">
       <label class="sidebar-label">API Key</label>
       <div class="api-key-wrapper">
-        <input type="password" id="apikey" placeholder="输入 Agnes API Key……"/>
+        <input type="password" id="apikey" placeholder="输入 Agnes API Key……" value="sk-CiADGDKSQUY5exB5ZWFYE1tfCnN7DAFQ5I8bapJHJGM8vvyP" />
         <button class="toggle-key" id="toggleKeyBtn" title="显示/隐藏">&#x1f441;</button>
       </div>
     </div>
     <div class="sidebar-section">
+      <label class="sidebar-label">随机种子（可选）</label>
+      <input type="number" id="seedInput" placeholder="留空则随机……"/>
+    </div>
+
+    <div class="sidebar-section">
+      <h3 class="sidebar-group-title">生图配置</h3>
+    </div>
+    <div class="sidebar-section">
       <label class="sidebar-label">模型</label>
-      <select id="modelSelect">
+      <select id="imageModel">
         <option value="agnes-image-2.1-flash" selected>Agnes-Image-2.1-Flash</option>
         <option value="agnes-image-2.0-flash">Agnes-Image-2.0-Flash</option>
-        <option value="agnes-video-v2.0">Agnes-Video-V2.0</option>
       </select>
-    </div>
-    <!-- 视频参数（仅视频模型时显示） -->
-    <div id="videoSettings" style="display:none">
-      <div class="sidebar-section">
-        <label class="sidebar-label">视频分辨率</label>
-        <select id="videoRes">
-          <option value="1152x768" selected>1152 x 768（横版）</option>
-          <option value="768x1152">768 x 1152（竖版）</option>
-          <option value="1024x576">1024 x 576（16:9）</option>
-          <option value="720x480">720 x 480</option>
-          <option value="480x720">480 x 720</option>
-          <option value="2048x1366">2048 x 1366</option>
-          <option value="1366x2048">1366 x 2048</option>
-        </select>
-      </div>
-      <div class="sidebar-section">
-        <label class="sidebar-label">帧数 (num_frames)</label>
-        <select id="numFrames">
-          <option value="41">41（~1.7s）</option>
-          <option value="81">81（~3.4s）</option>
-          <option value="121" selected>121（~5s）</option>
-          <option value="161">161（~6.7s）</option>
-          <option value="241">241（~10s）</option>
-		  <option value="361">361（~15s）</option>
-		  <option value="441">441（~18s）</option>
-        </select>
-      </div>
-      <div class="sidebar-section">
-        <label class="sidebar-label">帧率 (frame_rate)</label>
-        <select id="frameRate">
-          <option value="1">1 fps</option>
-          <option value="2">2 fps</option>
-          <option value="4">4 fps</option>
-          <option value="8">8 fps</option>
-          <option value="12">12 fps</option>
-          <option value="18">18 fps</option>
-          <option value="24" selected>24 fps</option>
-          <option value="30">30 fps</option>
-          <option value="48">48 fps</option>
-          <option value="60">60 fps</option>
-        </select>
-      </div>
     </div>
     <div class="sidebar-section" id="sizeSetting">
       <label class="sidebar-label">输出尺寸</label>
@@ -507,9 +479,58 @@
         <option value="2160x3840">2160 x 3840（4K竖版）</option>
       </select>
     </div>
+
     <div class="sidebar-section">
-      <label class="sidebar-label">随机种子（可选）</label>
-      <input type="number" id="seedInput" placeholder="留空则随机……"/>
+      <h3 class="sidebar-group-title">生视频配置</h3>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">模型</label>
+      <select id="videoModel">
+        <option value="agnes-video-v2.0">Agnes-Video-V2.0</option>
+      </select>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">视频分辨率</label>
+      <select id="videoRes">
+        <option value="1152x768" selected>1152 x 768（横版）</option>
+        <option value="768x1152">768 x 1152（竖版）</option>
+        <option value="1024x576">1024 x 576（16:9）</option>
+        <option value="720x480">720 x 480</option>
+        <option value="480x720">480 x 720</option>
+        <option value="2048x1366">2048 x 1366</option>
+        <option value="1366x2048">1366 x 2048</option>
+      </select>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">帧数 (num_frames)</label>
+      <select id="numFrames">
+        <option value="41">41（~1.7s）</option>
+        <option value="81">81（~3.4s）</option>
+        <option value="121" selected>121（~5s）</option>
+        <option value="161">161（~6.7s）</option>
+        <option value="241">241（~10s）</option>
+        <option value="361">361（~15s）</option>
+        <option value="441">441（~18s）</option>
+      </select>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">帧率 (frame_rate)</label>
+      <select id="frameRate">
+        <option value="1">1 fps</option>
+        <option value="2">2 fps</option>
+        <option value="4">4 fps</option>
+        <option value="8">8 fps</option>
+        <option value="12">12 fps</option>
+        <option value="18">18 fps</option>
+        <option value="24" selected>24 fps</option>
+        <option value="30">30 fps</option>
+        <option value="48">48 fps</option>
+        <option value="60">60 fps</option>
+      </select>
+    </div>
+
+    <div class="sidebar-section">
+      <h3 class="sidebar-group-title">说明</h3>
     </div>
     <div class="sidebar-hint">API 免费，在
       <a href="https://platform.agnes-ai.com/" target="_blank">Agnes Platform</a> 获取 Key。
@@ -536,6 +557,13 @@
     <div class="input-wrapper">
       <div class="ref-url-row">
         <input type="file" id="refFileInput" accept="image/*" multiple style="display:none" />
+        <div style="position:relative">
+          <button id="btnChatMode" title="切换对话模式" style="flex-shrink:0;padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;font-size:16px;line-height:1;min-width:36px;">&#x1f3a8;</button>
+          <div id="chatModeMenu" style="display:none;position:absolute;top:100%;left:0;z-index:100;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 4px 12px rgba(0,0,0,0.15);min-width:100px;padding:4px 0;">
+            <div data-mode="image" style="padding:8px 16px;cursor:pointer;font-size:13px;white-space:nowrap;">&#x1f3a8; 图片</div>
+            <div data-mode="video" style="padding:8px 16px;cursor:pointer;font-size:13px;">&#x1f3ac; 视频</div>
+          </div>
+        </div>
         <input type="text" id="refUrlInput" placeholder="&#x1f517; 粘贴参考图 URL（可选，支持多个，用逗号分隔）" />
         <button id="btnPickImage" title="从相册或文件选取图片" style="flex-shrink:0;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-muted);cursor:pointer;font-size:18px;line-height:1;">+</button>
         <div id="refUrlTags" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
@@ -608,6 +636,12 @@ const CONFIG = {
 let conversations = [];      // [{ id, name, messages, createdAt, updatedAt }]
 let currentConvId = null;
 let apiKey = '';
+const DEFAULT_API_KEY = 'sk-CiADGDKSQUY5exB5ZWFYE1tfCnN7DAFQ5I8bapJHJGM8vvyP';
+
+// 获取有效的 API Key：优先使用用户输入的，为空则使用默认值
+function getApiKey() {
+  return apiKey || DEFAULT_API_KEY;
+}
 let refUrls = [];
 let convPendingRequests = {};  // { convId: count } — pending 请求计数，0=idle，>0=loading
 
@@ -615,6 +649,9 @@ let convPendingRequests = {};  // { convId: count } — pending 请求计数，0
 const $apikey       = document.getElementById('apikey');
 const $sizeSelect   = document.getElementById('sizeSelect');
 const $seedInput    = document.getElementById('seedInput');
+const $imageModel   = document.getElementById('imageModel');
+const $videoModel   = document.getElementById('videoModel');
+const $videoRes     = document.getElementById('videoRes');
 const $btnPickImage = document.getElementById('btnPickImage');
 const $refFileInput = document.getElementById('refFileInput');
 const $promptInput  = document.getElementById('promptInput');
@@ -681,6 +718,7 @@ async function switchConversation(id) {
     await saveCurrentConv();
   }
   currentConvId = id;
+  updateChatModeUI();
   refUrls = [];
   $promptInput.value = '';
   $refUrlInput.value = '';
@@ -829,6 +867,15 @@ async function init() {
   $apikey.value = apiKey;
   updateStatus();
 
+  // 恢复所有设置项
+  $imageModel.value = localStorage.getItem('agnes_image_model') || 'agnes-image-2.1-flash';
+  $sizeSelect.value = localStorage.getItem('agnes_image_size') || '1024x1024';
+  $videoModel.value = localStorage.getItem('agnes_video_model') || 'agnes-video-v2.0';
+  $videoRes.value = localStorage.getItem('agnes_video_res') || '1152x768';
+  document.getElementById('numFrames').value = localStorage.getItem('agnes_video_frames') || '121';
+  document.getElementById('frameRate').value = localStorage.getItem('agnes_video_fps') || '24';
+  $seedInput.value = localStorage.getItem('agnes_seed') || '';
+
   // 加载历史对话
   conversations = await dbGetAll();
   if (conversations.length === 0) {
@@ -837,6 +884,7 @@ async function init() {
     // 打开最近更新的对话
     const latest = conversations.reduce((a, b) => a.updatedAt > b.updatedAt ? a : b);
     currentConvId = latest.id;
+    updateChatModeUI();
     renderConvList();
     renderAllMessages();
     scrollToBottom();
@@ -853,6 +901,15 @@ async function init() {
     $apikey.type = $apikey.type === 'password' ? 'text' : 'password';
   });
 
+  // 设置变更 → 存 localStorage
+  $imageModel.addEventListener('change', () => { localStorage.setItem('agnes_image_model', $imageModel.value); });
+  $sizeSelect.addEventListener('change', () => { localStorage.setItem('agnes_image_size', $sizeSelect.value); });
+  $videoModel.addEventListener('change', () => { localStorage.setItem('agnes_video_model', $videoModel.value); });
+  $videoRes.addEventListener('change', () => { localStorage.setItem('agnes_video_res', $videoRes.value); });
+  document.getElementById('numFrames').addEventListener('change', (e) => { localStorage.setItem('agnes_video_frames', e.target.value); });
+  document.getElementById('frameRate').addEventListener('change', (e) => { localStorage.setItem('agnes_video_fps', e.target.value); });
+  $seedInput.addEventListener('input', () => { localStorage.setItem('agnes_seed', $seedInput.value.trim()); });
+
   document.getElementById('settingsToggle').addEventListener('click', () => {
     const panel = document.getElementById('settingsPanel');
     const arrow = document.getElementById('settingsArrow');
@@ -862,14 +919,8 @@ async function init() {
   });
 
   // 模型切换时显示/隐藏视频参数区
-  document.getElementById('modelSelect').addEventListener('change', () => {
-    const isVideo = document.getElementById('modelSelect').value === 'agnes-video-v2.0';
-    document.getElementById('videoSettings').style.display = isVideo ? 'block' : 'none';
-    document.getElementById('sizeSetting').style.display = isVideo ? 'none' : 'block';
-    $promptInput.placeholder = isVideo
-      ? '描述你想要生成的视频：主体、动作、场景、镜头运动、光照、风格……\n提示：按 Ctrl+Enter 发送'
-      : '描述你想要生成的图像，或用自然语言描述如何编辑参考图……\n提示：按 Ctrl+Enter 发送';
-  });
+  // Chat 模式初始化：根据当前对话的 chatMode 设置占位符
+  updateChatModeUI();
 
   document.getElementById('btnNewConv').addEventListener('click', () => createConversation(true));
   // 移动端侧边栏开关
@@ -897,6 +948,23 @@ async function init() {
     $btnFS.title = document.fullscreenElement ? '退出全屏' : '全屏浏览';
   });
 
+  // Chat 模式按钮
+  const $btnChatMode = document.getElementById('btnChatMode');
+  const $chatModeMenu = document.getElementById('chatModeMenu');
+  $btnChatMode.addEventListener('click', (e) => {
+    e.stopPropagation();
+    $chatModeMenu.style.display = $chatModeMenu.style.display === 'none' ? 'block' : 'none';
+  });
+  document.addEventListener('click', () => { $chatModeMenu.style.display = 'none'; });
+  $chatModeMenu.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const item = e.target.closest('[data-mode]');
+    if (!item) return;
+    const mode = item.dataset.mode;
+    setChatMode(mode);
+    $chatModeMenu.style.display = 'none';
+  });
+
   $refUrlInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.ctrlKey) {
       e.preventDefault();
@@ -911,12 +979,10 @@ async function init() {
       for (const item of items) {
         if (item.type.startsWith('image/')) {
           e.preventDefault();
-          const reader = new FileReader();
-          reader.onload = () => {
-            $refUrlInput.value = reader.result;
+          blobToWebPBase64(item.getAsFile()).then(dataUrl => {
+            $refUrlInput.value = dataUrl;
             addRefUrl();
-          };
-          reader.readAsDataURL(item.getAsFile());
+          });
           return;
         }
       }
@@ -932,17 +998,14 @@ async function init() {
     if (!files.length) return;
     let done = 0;
     for (const file of files) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result;
+      blobToWebPBase64(file).then(dataUrl => {
         if (!refUrls.includes(dataUrl)) refUrls.push(dataUrl);
         done++;
         if (done === files.length) {
           renderRefTags();
           $refFileInput.value = '';
         }
-      };
-      reader.readAsDataURL(file);
+      });
     }
   });
 
@@ -965,6 +1028,74 @@ async function init() {
       e.preventDefault();
       sendMessage();
     }
+  });
+}
+
+// ==================== Chat 模式 ====================
+function getChatMode() {
+  const conv = getCurrentConv();
+  return (conv && conv.chatMode) ? conv.chatMode : 'image';
+}
+
+async function setChatMode(mode) {
+  if (!currentConvId) return;
+  const conv = getCurrentConv();
+  if (!conv) return;
+  conv.chatMode = mode;
+  conv.updatedAt = Date.now();
+  await dbPut(conv);
+  updateChatModeUI();
+}
+
+function updateChatModeUI() {
+  const mode = getChatMode();
+  const $btnChatMode = document.getElementById('btnChatMode');
+  $btnChatMode.innerHTML = mode === 'video' ? '&#x1f3ac;' : '&#x1f3a8;';
+  $promptInput.placeholder = mode === 'video'
+    ? '描述你想要生成的视频：主体、动作、场景、镜头运动、光照、风格……\n提示：按 Ctrl+Enter 发送'
+    : '描述你想要生成的图像，或用自然语言描述如何编辑参考图……\n提示：按 Ctrl+Enter 发送';
+}
+
+// ==================== 图片格式转换 ====================
+function blobToWebPBase64(blob) {
+  return new Promise((resolve) => {
+    // 先尝试直接读，保留原格式以防 canvas 失败
+    const fallbackReader = new FileReader();
+    const originalUrl = new Promise(r => {
+      fallbackReader.onload = () => r(fallbackReader.result);
+      fallbackReader.readAsDataURL(blob);
+    });
+
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      try {
+        const canvas = document.createElement('canvas');
+        // 最大 1024 像素等比例缩放
+        const MAX = 1024;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > MAX || h > MAX) {
+          const ratio = Math.min(MAX / w, MAX / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob(webpBlob => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.readAsDataURL(webpBlob);
+        }, 'image/webp', 0.92);
+      } catch (e) {
+        // canvas 污染（跨域）等异常，回退原格式
+        originalUrl.then(resolve);
+      }
+    };
+    img.onerror = () => originalUrl.then(resolve);
+    img.src = url;
   });
 }
 
@@ -1034,11 +1165,12 @@ function updateStatus() {
 
 // ==================== Send ====================
 function buildRequestBody(prompt, imageUrls) {
-  const model = document.getElementById('modelSelect').value;
+  const cMode = getChatMode();
 
-  if (model === 'agnes-video-v2.0') {
+  if (cMode === 'video') {
     // 视频请求体
-    const res = document.getElementById('videoRes').value.split('x');
+    const model = $videoModel.value;
+    const res = $videoRes.value.split('x');
     const body = {
       model, prompt,
       width: parseInt(res[0]),
@@ -1058,7 +1190,8 @@ function buildRequestBody(prompt, imageUrls) {
     return body;
   }
 
-  // 图片请求体（原有逻辑）
+  // 图片请求体
+  const model = $imageModel.value;
   const body = { model, prompt, size: $sizeSelect.value, extra_body: { response_format: 'url' } };
   const seedVal = $seedInput.value.trim();
   if (seedVal) body.seed = parseInt(seedVal, 10);
@@ -1072,10 +1205,6 @@ function buildRequestBody(prompt, imageUrls) {
 async function sendMessage() {
   const prompt = $promptInput.value.trim();
   if (!prompt) return;
-  if (!apiKey) {
-    addMessage('ai', '\u26a0\ufe0f 请在左侧设置面板输入 Agnes API Key（platform.agnes-ai.com 免费获取）。', true);
-    return;
-  }
 
   const pendingUrl = $refUrlInput.value.trim();
   if (pendingUrl && isValidUrl(pendingUrl)) addRefUrl();
@@ -1095,7 +1224,7 @@ async function sendMessage() {
   const msgPid = conv ? conv.messages[conv.messages.length - 1]._msg_id : null;
 
   // 2. 立即创建 AI 占位消息（紧跟在 user 消息后面）
-  const isVideo = document.getElementById('modelSelect').value === 'agnes-video-v2.0';
+  const isVideo = getChatMode() === 'video';
   await addMessageToConv(sourceConvId, 'ai', isVideo ? '\u23f3 正在创建视频任务…' : '\u23f3 正在生成…', false, [], [], { _endpoint: getEndpoint(), _msg_pid: msgPid });
 
   // 3. 清空输入
@@ -1205,8 +1334,7 @@ async function sendMessage() {
 }
 
 function getEndpoint() {
-  return document.getElementById('modelSelect').value === 'agnes-video-v2.0'
-    ? CONFIG.videoEndpoint : CONFIG.imageEndpoint;
+  return getChatMode() === 'video' ? CONFIG.videoEndpoint : CONFIG.imageEndpoint;
 }
 
 async function callAgnesAPI(prompt, imageUrls) {
@@ -1215,7 +1343,7 @@ async function callAgnesAPI(prompt, imageUrls) {
   const endpoint = getEndpoint();
   const resp = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    headers: { 'Authorization': `Bearer ${getApiKey()}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   let responseBody;
@@ -1413,7 +1541,7 @@ async function refreshVideoTask(convId, msgIdx, taskId) {
 
   try {
     const resp = await fetch(`${CONFIG.videoEndpoint}/${taskId}`, {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Authorization': `Bearer ${getApiKey()}` },
       credentials: 'omit',
       cache: 'no-store',
     });
@@ -1604,15 +1732,10 @@ async function regenerateFromUser(convId, msgIdx) {
   } catch (e) { /* 忽略解析错误 */ }
   reqParams.prompt = userMsg.text;
 
-  if (!apiKey) {
-    alert('请先设置 API Key');
-    return;
-  }
-
   addPendingRequest(convId);
 
   // ═══ 阶段1：先设为 loading 态 ═══
-  const isVideo = reqParams.model === 'agnes-video-v2.0';
+  const isVideo = getChatMode() === 'video';
   let aiMsg = conv.messages.find(m => m._msg_pid === userMsg._msg_id);
 
   if (aiMsg) {
@@ -1669,7 +1792,7 @@ async function regenerateFromUser(convId, msgIdx) {
     const reqBodyStr = JSON.stringify(reqParams, null, 2);
     const resp = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getApiKey()}` },
       body: reqBodyStr,
     });
     const data = await resp.json();

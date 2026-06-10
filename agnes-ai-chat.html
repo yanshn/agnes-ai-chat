@@ -755,6 +755,11 @@ const CONFIG = {
 let conversations = [];      // [{ id, name, messages, createdAt, updatedAt }]
 let currentConvId = null;
 let apiKey = '';
+const DEFAULT_API_KEY = 'sk-CiADGDKSQUY5exB5ZWFYE1tfCnN7DAFQ5I8bapJHJGM8vvyP';
+
+function getApiKey() {
+  return apiKey || DEFAULT_API_KEY;
+}
 let currentAbortController = null;  // 流式请求的 AbortController
 let refUrls = [];
 let convPendingRequests = {};  // { convId: count } — pending 请求计数，0=idle，>0=loading
@@ -1410,10 +1415,6 @@ function buildRequestBody(prompt, imageUrls, stopIdx = undefined) {
 async function sendMessage() {
   const prompt = $promptInput.value.trim();
   if (!prompt) return;
-  if (!apiKey) {
-    addMessage('ai', '\u26a0\ufe0f 请在左侧设置面板输入 Agnes API Key（platform.agnes-ai.com 免费获取）。', true);
-    return;
-  }
 
   // 对话模式走流式路径
   if (getChatMode() === 'chat') {
@@ -1593,7 +1594,7 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
   try {
     response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getApiKey()}` },
       body: JSON.stringify(reqBody),
       signal: currentAbortController.signal,
     });
@@ -1721,7 +1722,7 @@ async function callAgnesAPI(prompt, imageUrls) {
   const endpoint = getEndpoint();
   const resp = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    headers: { 'Authorization': `Bearer ${getApiKey()}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   let responseBody;
@@ -2067,7 +2068,7 @@ async function refreshVideoTask(convId, msgIdx, taskId) {
 
   try {
     const resp = await fetch(`${CONFIG.videoEndpoint}/${taskId}`, {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Authorization': `Bearer ${getApiKey()}` },
       credentials: 'omit',
       cache: 'no-store',
     });
@@ -2311,11 +2312,6 @@ async function regenerateFromUser(convId, msgIdx) {
   } catch (e) { /* 忽略解析错误 */ }
   reqParams.prompt = userMsg.text;
 
-  if (!apiKey) {
-    alert('请先设置 API Key');
-    return;
-  }
-
   addPendingRequest(convId);
 
   // ═══ 阶段1：先设为 loading 态 ═══
@@ -2376,7 +2372,7 @@ async function regenerateFromUser(convId, msgIdx) {
     const reqBodyStr = JSON.stringify(reqParams, null, 2);
     const resp = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getApiKey()}` },
       body: reqBodyStr,
     });
     const data = await resp.json();
