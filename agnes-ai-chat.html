@@ -242,7 +242,7 @@
 
   /* Chat bubbles */
   .chat-bubble {
-    max-width: 80%; padding: 10px 14px;
+    padding: 10px 14px;
     border-radius: var(--radius); line-height: 1.6;
     font-size: 14px; word-break: break-word; margin-bottom: 4px;
   }
@@ -251,7 +251,7 @@
     background: var(--accent); color: #fff;
   }
   .chat-bubble-ai {
-    margin-right: auto; margin-left: 12px;
+    margin-right: auto; margin-left: auto;
     background: var(--bg-secondary); color: var(--text-primary);
   }
   .stream-cursor {
@@ -282,7 +282,7 @@
     border-top: 1px solid rgba(78,168,222,0.1);
     max-height: 300px; overflow-y: auto;
   }
-  .thinking-content.open { display: block; }
+  .thinking-content.open { display: block; max-height: 15em; }
   .thinking-content::-webkit-scrollbar { width: 4px; }
   .thinking-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
@@ -373,6 +373,12 @@
   }
   .msg-actions .btn-act:hover { color: var(--accent); border-color: var(--accent); }
   .msg-actions .btn-del:hover { color: var(--error); border-color: var(--error); }
+
+  /* Compact info bar: time on left, buttons on right */
+  .msg-compact-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 4px; gap: 8px;
+  }
 
   /* Video task */
   .video-task { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
@@ -1656,6 +1662,8 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
   let thinkingText = '';
   let buffer = '';
   let hasThinking = false;
+  let thinkingActive = false;  // thinking 是否正在进行中
+  let usageTokens = null;      // { prompt_tokens, completion_tokens, total_tokens }
 
   try {
     while (true) {
@@ -1673,10 +1681,19 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
           const content = json.choices?.[0]?.delta?.content || '';
           const reasoning = json.choices?.[0]?.delta?.reasoning_content || '';
           fullText += content;
+          // 提取 token 统计（通常出现在最后一个 chunk）
+          if (json.usage) {
+            usageTokens = {
+              prompt_tokens: json.usage.prompt_tokens || 0,
+              completion_tokens: json.usage.completion_tokens || 0,
+              total_tokens: json.usage.total_tokens || 0,
+            };
+          }
           if (reasoning) {
             hasThinking = true;
+            thinkingActive = true;
             thinkingText += reasoning;
-            const thinkingEl = document.querySelector(`[data-thinking-id="${streamId}"]`);
+            const thinkingEl = document.querySelector(`[data-thinking-id="${msgPid}"]`);
             if (thinkingEl) {
               thinkingEl.innerHTML = marked.parse(thinkingText);
               const block = thinkingEl.closest('.thinking-block');
@@ -1687,23 +1704,31 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
             } else {
               const bubbleEl = document.querySelector(`.chat-bubble-ai[data-stream-id="${streamId}"]`);
               if (bubbleEl) {
-                const thinkingId = 'thinking_' + streamId;
+                const thinkingId = 'think_' + msgPid;
                 const block = document.createElement('div');
                 block.className = 'thinking-block';
                 block.innerHTML = `
                   <div class="thinking-header" onclick="toggleThinkingBlock('${thinkingId}')">
                     <span class="arrow open" id="${thinkingId}-arrow">&#9654;</span>
-                    <span class="icon">&#x1f4ad;</span>
                     <span>深度思考</span>
                     <span class="count">(${thinkingText.length} 字)</span>
                   </div>
-                  <div class="thinking-content open" id="${thinkingId}" data-thinking-id="${streamId}">
+                  <div class="thinking-content open" id="${thinkingId}" data-thinking-id="${msgPid}">
                     <div class="md-content">${marked.parse(thinkingText)}</div>
                   </div>
                 `;
                 bubbleEl.insertBefore(block, bubbleEl.firstChild);
               }
             }
+          }
+          // 主内容开始输出时，自动折叠 thinking 块
+          if (content && thinkingActive) {
+            thinkingActive = false;
+            const thinkId = 'think_' + msgPid;
+            const contentEl = document.getElementById(thinkId);
+            const arrowEl = document.getElementById(thinkId + '-arrow');
+            if (contentEl) contentEl.classList.remove('open');
+            if (arrowEl) arrowEl.classList.remove('open');
           }
           const bubbleEl = document.querySelector(`.chat-bubble-ai[data-stream-id="${streamId}"]`);
           if (bubbleEl) {
@@ -1743,6 +1768,9 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
     if (hasThinking) {
       aiMsg.apiBodies._hasThinking = true;
       aiMsg.apiBodies._thinkingText = thinkingText;
+    }
+    if (usageTokens) {
+      aiMsg.apiBodies._usage = usageTokens;
     }
     aiMsg.time = new Date().toISOString();
     await dbPut(conv);
@@ -1829,6 +1857,17 @@ function buildBubbleContent(msg) {
       }
       // 文本
       html += `<div class="msg-text">${msg.text}</div>`;
+      // 请求体/响应体折叠
+      if (msg.apiBodies?.requestBody) {
+        const uid = codeId();
+        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
+        html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
+      }
+      if (msg.apiBodies?.responseBody) {
+        const uid = codeId();
+        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 响应体</button>`;
+        html += `<div class="code-block" id="${uid}"><div class="code-label">RESPONSE</div>${escapeHtml(msg.apiBodies.responseBody)}</div>`;
+      }
       // 生成图
       if (msg.genImages && msg.genImages.length > 0) {
         html += '<div class="gen-image-wrapper"><span class="gen-label">&#x1f5bc; 生成结果</span>';
@@ -1861,50 +1900,45 @@ function buildBubbleContent(msg) {
         }
         html += '</div>';
       }
-      // 元信息
-      html += `<div class="msg-time">${formatTime(new Date(msg.time))}</div>`;
-      // 按钮
-      html += '<div class="msg-actions">';
-      html += `<button class="btn-act" title="复制提示词" onclick="event.stopPropagation();copyUserPrompt('${msg._convId}',${msg._idx})">&#x1f4cb;</button>`;
-      html += `<button class="btn-del" title="删除此请求和对应响应" onclick="event.stopPropagation();deleteMsgPair('${msg._convId}',${msg._idx})">&#x1f5d1;</button>`;
+      // 紧凑信息行：时间靠左，按钮靠右
+      html += '<div class="msg-compact-bar">';
+      html += `<span class="msg-time">${formatTime(new Date(msg.time))}</span>`;
+      html += '<div class="msg-actions" style="margin-top:0;">';
+      html += `<button class="btn-act" title="复制图片/视频URL" onclick="event.stopPropagation();copyGenUrl(this)">&#x1f4cb; 复制URL</button>`;
       html += `<button class="btn-act" title="重新生成" onclick="event.stopPropagation();regenerateFromUser('${msg._convId}',${msg._idx})">&#x1f504;</button>`;
       html += '</div>';
-      // 请求体/响应体
+      html += '</div>';
+      return html;
+    }
+
+    // ========== 用户消息（与生图/生视频模式完全一致）==========
+    if (isUser) {
+      // 显示参考图缩略图
+      if (msg.refImages && msg.refImages.length > 0) {
+        html += '<div class="ref-images">';
+        msg.refImages.forEach(url => {
+          html += `<img src="${escapeHtml(url)}" alt="参考图" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+        });
+        html += '</div>';
+      }
+      // 提示词文本
+      html += `<div class="msg-text" onclick="event.stopPropagation();startEditPrompt('${msg._convId}',${msg._idx})">${msg.text}</div>`;
+      // 请求体折叠（单独一行）
       if (msg.apiBodies?.requestBody) {
         const uid = codeId();
         html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
         html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
       }
-      if (msg.apiBodies?.responseBody) {
-        const uid = codeId();
-        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 响应体</button>`;
-        html += `<div class="code-block" id="${uid}"><div class="code-label">RESPONSE</div>${escapeHtml(msg.apiBodies.responseBody)}</div>`;
-      }
-      return html;
-    }
-
-    // ========== 用户消息（参考图消息）==========
-    if (isUser) {
-      // 显示参考图缩略图
-      if (msg.refImages && msg.refImages.length > 0) {
-        html += '<div class="ref-images" style="margin-bottom:6px;">';
-        msg.refImages.forEach(url => {
-          html += `<img src="${escapeHtml(url)}" alt="参考图" style="max-width:120px;max-height:80px;border-radius:6px;cursor:pointer;" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
-        });
-        html += '</div>';
-      }
-      html += `<div class="chat-bubble chat-bubble-user">${escapeHtml(msg.text)}</div>`;
-      html += '<div class="msg-meta" style="display:flex;align-items:center;gap:8px;margin-top:4px;padding-left:12px;">';
-      html += `<span class="msg-time">${formatTime(new Date(msg.time))}</span>`;
-      html += `<button class="msg-action-btn" onclick="copyText('${escapeAttr(msg.text)}')">&#x1f4cb; 复制</button>`;
-      html += `<button class="msg-action-btn" onclick="event.stopPropagation();deleteMsgPair('${msg._convId}',${msg._idx})">&#x1f5d1;</button>`;
-      html += `<button class="msg-action-btn" onclick="event.stopPropagation();regenerateFromUser('${msg._convId}',${msg._idx})">&#x21bb; 重生成</button>`;
+      // 紧凑信息行：时间靠左，操作按钮靠右
+      const t = new Date(msg.time);
+      html += '<div class="msg-compact-bar">';
+      html += `<span class="msg-time">${formatTime(t)}</span>`;
+      html += '<div class="msg-actions" style="margin-top:0;">';
+      html += `<button class="btn-act" title="复制提示词" onclick="event.stopPropagation();copyUserPrompt('${msg._convId}',${msg._idx})">&#x1f4cb;</button>`;
+      html += `<button class="btn-del" title="删除此请求和对应响应" onclick="event.stopPropagation();deleteMsgPair('${msg._convId}',${msg._idx})">&#x1f5d1;</button>`;
+      html += `<button class="btn-act" title="重新生成" onclick="event.stopPropagation();regenerateFromUser('${msg._convId}',${msg._idx})">&#x1f504;</button>`;
       html += '</div>';
-      if (msg.apiBodies?.requestBody) {
-        const uid = codeId();
-        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')" style="margin-top:4px;margin-left:12px;"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体</button>`;
-        html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
-      }
+      html += '</div>';
       return html;
     }
 
@@ -1921,16 +1955,15 @@ function buildBubbleContent(msg) {
     const hasThinking = msg.apiBodies?._hasThinking === true;
     const thinkingText = msg.apiBodies?._thinkingText || '';
     if (hasThinking) {
-      const thinkingId = 'thinking_' + streamId;
+      const thinkingId = 'think_' + (msg._msg_pid || Date.now());
       const thinkingLen = thinkingText.length;
       html += `<div class="thinking-block">`;
       html += `<div class="thinking-header" onclick="toggleThinkingBlock('${thinkingId}')">`;
-      html += `<span class="arrow open" id="${thinkingId}-arrow">&#9654;</span>`;
-      html += `<span class="icon">&#x1f4ad;</span>`;
+      html += `<span class="arrow" id="${thinkingId}-arrow">&#9654;</span>`;
       html += `<span>深度思考</span>`;
       html += `<span class="count">(${thinkingLen} 字)</span>`;
       html += `</div>`;
-      html += `<div class="thinking-content open" id="${thinkingId}" data-thinking-id="${streamId}">
+      html += `<div class="thinking-content" id="${thinkingId}" data-thinking-id="${msg._msg_pid}">
         <div class="md-content">${marked.parse(thinkingText)}</div>
       </div>`;
       html += `</div>`;
@@ -1950,10 +1983,18 @@ function buildBubbleContent(msg) {
     }
     html += '</div>';
 
-    // AI 消息底部时间和复制按钮
-    html += `<div class="msg-meta" style="display:flex;align-items:center;gap:8px;margin-top:4px;padding-left:12px;">`;
+    // AI 消息底部：时间 + token 统计 + 复制按钮
+    const usage = msg.apiBodies?._usage;
+    html += `<div class="msg-meta" style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;padding:0 12px;">`;
+    html += '<span style="display:flex;align-items:center;gap:8px;">';
     html += `<span class="msg-time">${formatTime(new Date(msg.time))}</span>`;
-    html += `<button class="msg-action-btn" onclick="copyAiMessage(this)">&#x1f4cb; 复制</button>`;
+    if (usage) {
+      html += `<span class="msg-tokens" style="font-size:11px;color:var(--text-muted);">`;
+      html += `输入token:${usage.prompt_tokens} &nbsp; 输出token:${usage.completion_tokens} &nbsp; 总token:${usage.total_tokens}`;
+      html += `</span>`;
+    }
+    html += '</span>';
+    html += `<button class="msg-action-btn" onclick="copyAiMessage(this)">&#x1f4cb; 复制内容</button>`;
     html += `</div>`;
 
     return html;
@@ -1973,32 +2014,25 @@ function buildBubbleContent(msg) {
     html += `<div class="msg-text">${msg.text}</div>`;
   }
 
+  if (msg.apiBodies && !isUser) {
+    if (msg.apiBodies.requestBody) {
+      const uid = codeId();
+      html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
+      html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
+    }
+    if (msg.apiBodies.responseBody) {
+      const uid = codeId();
+      html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 响应体 (${msg.apiBodies.responseBody.length} 字符)</button>`;
+      html += `<div class="code-block" id="${uid}"><div class="code-label">${msg.isError ? 'ERROR RESPONSE' : 'RESPONSE'}</div>${escapeHtml(msg.apiBodies.responseBody)}</div>`;
+    }
+  }
+
   if (msg.genImages && msg.genImages.length > 0) {
     html += '<div class="gen-image-wrapper"><span class="gen-label">&#x1f5bc; 生成结果</span>';
     msg.genImages.forEach(url => {
       html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
     });
     html += '</div>';
-  }
-
-  if (msg.apiBodies) {
-    if (isUser && msg.apiBodies.requestBody) {
-      const uid = codeId();
-      html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
-      html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
-    }
-    if (!isUser && msg.apiBodies) {
-      if (msg.apiBodies.requestBody) {
-        const uid = codeId();
-        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
-        html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
-      }
-      if (msg.apiBodies.responseBody) {
-        const uid = codeId();
-        html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 响应体 (${msg.apiBodies.responseBody.length} 字符)</button>`;
-        html += `<div class="code-block" id="${uid}"><div class="code-label">${msg.isError ? 'ERROR RESPONSE' : 'RESPONSE'}</div>${escapeHtml(msg.apiBodies.responseBody)}</div>`;
-      }
-    }
   }
 
   // 视频任务渲染
@@ -2026,17 +2060,33 @@ function buildBubbleContent(msg) {
     html += '</div>';
   }
 
-  const t = new Date(msg.time);
-  html += `<div class="msg-time">${formatTime(t)}</div>`;
-
-  // 消息操作按钮
-  html += '<div class="msg-actions">';
   if (isUser) {
+    // 请求体折叠（单独一行）
+    if (msg.apiBodies?.requestBody) {
+      const uid = codeId();
+      html += `<button class="code-toggle" onclick="toggleCodeBlock('${uid}')"><span class="arrow" id="${uid}-arrow">&#9654;</span> 请求体 (${msg.apiBodies.requestBody.length} 字符)</button>`;
+      html += `<div class="code-block" id="${uid}"><div class="code-label">POST ${escapeHtml(msg.apiBodies._endpoint || '')}</div>${escapeHtml(msg.apiBodies.requestBody)}</div>`;
+    }
+    // 紧凑信息行：时间靠左，按钮靠右
+    const t = new Date(msg.time);
+    html += '<div class="msg-compact-bar">';
+    html += `<span class="msg-time">${formatTime(t)}</span>`;
+    html += '<div class="msg-actions" style="margin-top:0;">';
     html += `<button class="btn-act" title="复制提示词" onclick="event.stopPropagation();copyUserPrompt('${msg._convId}',${msg._idx})">&#x1f4cb;</button>`;
     html += `<button class="btn-del" title="删除此请求和对应响应" onclick="event.stopPropagation();deleteMsgPair('${msg._convId}',${msg._idx})">&#x1f5d1;</button>`;
     html += `<button class="btn-act" title="重新生成" onclick="event.stopPropagation();regenerateFromUser('${msg._convId}',${msg._idx})">&#x1f504;</button>`;
+    html += '</div>';
+    html += '</div>';
+  } else {
+    // AI 消息：时间 + 复制URL
+    const t = new Date(msg.time);
+    html += '<div class="msg-compact-bar">';
+    html += `<span class="msg-time">${formatTime(t)}</span>`;
+    html += '<div class="msg-actions" style="margin-top:0;">';
+    html += `<button class="btn-act" title="复制图片/视频URL" onclick="event.stopPropagation();copyGenUrl(this)">&#x1f4cb; 复制URL</button>`;
+    html += '</div>';
+    html += '</div>';
   }
-  html += '</div>';
 
   return html;
 }
@@ -2528,9 +2578,8 @@ function toggleThinkingBlock(id) {
   const content = document.getElementById(id);
   const arrow = document.getElementById(id + '-arrow');
   if (!content || !arrow) return;
-  const open = content.classList.toggle('open');
-  arrow.classList.toggle('open', open);
-  arrow.innerHTML = open ? '&#9660;' : '&#9654;';
+  content.classList.toggle('open');
+  arrow.classList.toggle('open');
 }
 
 function formatTime(d) {
@@ -2551,20 +2600,49 @@ function copyText(text) {
 }
 // 复制 AI 消息内容（从 DOM 提取，自动排除 thinking 区块）
 function copyAiMessage(btn) {
-  const parentBubble = btn.closest('.bubble.ai');
-  if (!parentBubble) return;
-  const bubble = parentBubble.querySelector('.chat-bubble-ai');
-  if (!bubble) return;
-  const clone = bubble.cloneNode(true);
-  const thinking = clone.querySelector('.thinking-block');
-  if (thinking) thinking.remove();
-  const text = clone.textContent.trim();
-  if (!text) return;
+  const row = btn.closest('.message-row');
+  if (!row) return;
+  const idx = parseInt(row.getAttribute('data-msg-idx'));
+  const conv = getCurrentConv();
+  if (!conv || isNaN(idx) || !conv.messages[idx]) return;
+  const rawText = conv.messages[idx].text || '';
+  if (!rawText) return;
   if (navigator.clipboard) {
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(rawText);
   } else {
     const ta = document.createElement('textarea');
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    ta.value = rawText; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  }
+  const origHTML = btn.innerHTML;
+  btn.innerHTML = '&#x2705; 已复制';
+  setTimeout(() => { btn.innerHTML = origHTML; }, 1500);
+}
+
+// 复制生图/生视频的 URL
+function copyGenUrl(btn) {
+  const row = btn.closest('.message-row');
+  if (!row) return;
+  const idx = parseInt(row.getAttribute('data-msg-idx'));
+  const conv = getCurrentConv();
+  if (!conv || isNaN(idx) || !conv.messages[idx]) return;
+  const msg = conv.messages[idx];
+  let url = '';
+  // 图片 URL
+  if (msg.genImages && msg.genImages.length > 0) {
+    url = msg.genImages[0];
+  }
+  // 视频 URL
+  if (!url && msg.apiBodies?.videoUrl) {
+    url = msg.apiBodies.videoUrl;
+  }
+  if (!url) return;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(url);
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
     document.body.appendChild(ta); ta.select();
     document.execCommand('copy'); document.body.removeChild(ta);
   }
