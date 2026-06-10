@@ -1457,7 +1457,6 @@ async function sendMessage() {
 
   // 1. 创建 user 消息
   await addMessageToConv(sourceConvId, 'user', prompt, false, userRefs, [], { requestBody: reqBodyStr, _endpoint: getEndpoint() });
-  scrollToBottom();
 
   const conv = conversations.find(c => c.id === sourceConvId);
   const msgPid = conv ? conv.messages[conv.messages.length - 1]._msg_id : null;
@@ -1465,6 +1464,7 @@ async function sendMessage() {
   // 2. 立即创建 AI 占位消息（紧跟在 user 消息后面）
   const isVideo = getChatMode() === 'video';
   await addMessageToConv(sourceConvId, 'ai', isVideo ? '\u23f3 正在创建视频任务…' : '\u23f3 正在生成…', false, [], [], { _endpoint: getEndpoint(), _msg_pid: msgPid });
+  scrollToBottom();
 
   // 3. 清空输入
   $promptInput.value = '';
@@ -1678,7 +1678,7 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
             thinkingText += reasoning;
             const thinkingEl = document.querySelector(`[data-thinking-id="${streamId}"]`);
             if (thinkingEl) {
-              thinkingEl.textContent = thinkingText;
+              thinkingEl.innerHTML = marked.parse(thinkingText);
               const block = thinkingEl.closest('.thinking-block');
               if (block) {
                 const countEl = block.querySelector('.count');
@@ -1697,14 +1697,30 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
                     <span>深度思考</span>
                     <span class="count">(${thinkingText.length} 字)</span>
                   </div>
-                  <div class="thinking-content open" id="${thinkingId}" data-thinking-id="${streamId}">${escapeHtml(thinkingText)}</div>
+                  <div class="thinking-content open" id="${thinkingId}" data-thinking-id="${streamId}">
+                    <div class="md-content">${marked.parse(thinkingText)}</div>
+                  </div>
                 `;
                 bubbleEl.insertBefore(block, bubbleEl.firstChild);
               }
             }
           }
-          const el = document.querySelector(`[data-stream-id="${streamId}"]`);
-          if (el) { el.textContent = fullText; scrollToBottom(); }
+          const bubbleEl = document.querySelector(`.chat-bubble-ai[data-stream-id="${streamId}"]`);
+          if (bubbleEl) {
+            // 首次有内容时，移除初始的外置光标
+            if (fullText && !bubbleEl.querySelector('.md-content')) {
+              const outerCursor = bubbleEl.querySelector('.stream-cursor');
+              if (outerCursor) outerCursor.remove();
+            }
+            // 实时 Markdown 渲染
+            let mdEl = bubbleEl.querySelector('.md-content');
+            if (!mdEl) {
+              mdEl = document.createElement('div');
+              mdEl.className = 'md-content';
+              bubbleEl.appendChild(mdEl);
+            }
+            mdEl.innerHTML = marked.parse(fullText) + '<span class="stream-cursor">|</span>';
+          }
         } catch {}
       }
     }
@@ -1732,7 +1748,6 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
     await dbPut(conv);
   }
   renderAllMessages();
-  scrollToBottom();
 }
 
 async function callAgnesAPI(prompt, imageUrls) {
@@ -1896,8 +1911,8 @@ function buildBubbleContent(msg) {
     // ========== AI 消息（纯对话气泡，无按钮）==========
     let text = msg.text || '';
     if (streaming && streamId) {
-      const el = document.querySelector(`[data-stream-id="${streamId}"]`);
-      if (el) text = el.textContent || text;
+      // 流式中不从 DOM 回读（内容由 SSE handler 的 innerHTML 维护）
+      // 仅在流结束后 msg.text 才有完整值
     }
 
     html += `<div class="chat-bubble chat-bubble-ai" data-stream-id="${streamId}">`;
@@ -1915,14 +1930,17 @@ function buildBubbleContent(msg) {
       html += `<span>深度思考</span>`;
       html += `<span class="count">(${thinkingLen} 字)</span>`;
       html += `</div>`;
-      html += `<div class="thinking-content open" id="${thinkingId}" data-thinking-id="${streamId}">${escapeHtml(thinkingText)}</div>`;
+      html += `<div class="thinking-content open" id="${thinkingId}" data-thinking-id="${streamId}">
+        <div class="md-content">${marked.parse(thinkingText)}</div>
+      </div>`;
       html += `</div>`;
     }
 
     if (msg.isError) {
       html += `<div style="color:var(--error);">${escapeHtml(text)}</div>`;
     } else if (streaming) {
-      html += `<div class="md-content">${escapeHtml(text)}<span class="stream-cursor">|</span></div>`;
+      // 流式中：空容器 + 光标，SSE handler 实时填充 Markdown
+      html += '<div class="md-content"></div><span class="stream-cursor">|</span>';
     } else {
       try {
         html += `<div class="md-content">${marked.parse(text)}</div>`;
