@@ -2223,7 +2223,8 @@ function buildBubbleContent(msg) {
       html += '<div class="msg-compact-bar">';
       html += `<span class="msg-time">${formatTime(new Date(msg.time))}</span>`;
       html += '<div class="msg-actions" style="margin-top:0;">';
-      html += `<button class="btn-act" title="复制图片/视频URL" onclick="event.stopPropagation();copyGenUrl(this)">&#x1f4cb; 复制URL</button>`;
+      html += `<button class="btn-act" title="复制图片/视频URL" onclick="event.stopPropagation();copyGenUrl(this)">&#x1f4cb;</button>`;
+      html += `<button class="btn-act" title="在新窗口单独打开" onclick="event.stopPropagation();openGenUrl(this)">&#x1f517;</button>`;
       html += `<button class="btn-act" title="重新生成" onclick="event.stopPropagation();regenerateFromUser('${msg._convId}',${msg._idx})">&#x1f504;</button>`;
       html += '</div>';
       html += '</div>';
@@ -2400,7 +2401,8 @@ function buildBubbleContent(msg) {
     html += '<div class="msg-compact-bar">';
     html += `<span class="msg-time">${formatTime(t)}</span>`;
     html += '<div class="msg-actions" style="margin-top:0;">';
-    html += `<button class="btn-act" title="复制图片/视频URL" onclick="event.stopPropagation();copyGenUrl(this)">&#x1f4cb; 复制URL</button>`;
+    html += `<button class="btn-act" title="复制图片/视频URL" onclick="event.stopPropagation();copyGenUrl(this)">&#x1f4cb;</button>`;
+    html += `<button class="btn-act" title="在新窗口单独打开" onclick="event.stopPropagation();openGenUrl(this)">&#x1f517;</button>`;
     html += '</div>';
     html += '</div>';
   }
@@ -2941,7 +2943,7 @@ function copyAiMessage(btn) {
     document.execCommand('copy'); document.body.removeChild(ta);
   }
   const origHTML = btn.innerHTML;
-  btn.innerHTML = '&#x2705; 已复制';
+  btn.innerHTML = '&#x2705;';
   setTimeout(() => { btn.innerHTML = origHTML; }, 1500);
 }
 
@@ -2972,8 +2974,27 @@ function copyGenUrl(btn) {
     document.execCommand('copy'); document.body.removeChild(ta);
   }
   const origHTML = btn.innerHTML;
-  btn.innerHTML = '&#x2705; 已复制';
+  btn.innerHTML = '&#x2705;';
   setTimeout(() => { btn.innerHTML = origHTML; }, 1500);
+}
+
+// 在新窗口单独打开生图/生视频的 URL
+function openGenUrl(btn) {
+  const row = btn.closest('.message-row');
+  if (!row) return;
+  const idx = parseInt(row.getAttribute('data-msg-idx'));
+  const conv = getCurrentConv();
+  if (!conv || isNaN(idx) || !conv.messages[idx]) return;
+  const msg = conv.messages[idx];
+  let url = '';
+  if (msg.genImages && msg.genImages.length > 0) {
+    url = msg.genImages[0];
+  }
+  if (!url && msg.apiBodies?.videoUrl) {
+    url = msg.apiBodies.videoUrl;
+  }
+  if (!url) return;
+  window.open(url, '_blank');
 }
 
 function autoResizeTextarea() {
