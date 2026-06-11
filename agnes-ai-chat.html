@@ -407,7 +407,7 @@
   .bubble.error .msg-text { color: var(--error); font-size: 13px; }
 
   .chat-bubble { max-width: 99%; }
-  .edit-inline { width: 75vw; min-width: 350px; max-width: 650px; box-sizing: border-box; }
+  .edit-inline { width: 75vw; min-width: 300px; max-width: 650px; box-sizing: border-box; }
   .edit-inline textarea { width: 100%; min-height: 120px; padding: 12px 14px; border: 2px solid var(--accent); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary); font-size: 15px; line-height: 1.6; font-family: inherit; resize: vertical; box-sizing: border-box; }
 
   /* Message action buttons */
@@ -467,6 +467,41 @@
     border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow);
   }
   .input-wrapper textarea::placeholder { color: var(--text-muted); }
+
+  .btn-optimize {
+    position: absolute; right: 8px; bottom: 8px;
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px;
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    cursor: pointer;
+    transition: var(--transition);
+    z-index: 2;
+  }
+  .btn-optimize:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .btn-optimize.loading {
+    color: var(--accent);
+    border-color: var(--accent);
+    cursor: wait;
+    pointer-events: none;
+  }
+  .btn-optimize .optimize-icon {
+    width: 12px; height: 12px;
+    animation: spin 1s linear infinite paused;
+  }
+  .btn-optimize.loading .optimize-icon {
+    animation-play-state: running;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
 
   .ref-url-row { display: flex; gap: 6px; align-items: flex-start; }
   .ref-url-row input[type="text"] {
@@ -775,7 +810,13 @@
         <button id="btnPickImage" title="从相册或文件选取图片" style="flex-shrink:0;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-muted);cursor:pointer;font-size:18px;line-height:1;">+</button>
         <div id="refUrlTags" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
       </div>
-      <textarea id="promptInput" rows="3" placeholder="描述你想要生成的图像，或用自然语言描述如何编辑参考图……&#10;提示：按 Ctrl+Enter 发送"></textarea>
+      <div style="position:relative">
+        <textarea id="promptInput" rows="3" placeholder="描述你想要生成的图像，或用自然语言描述如何编辑参考图……&#10;提示：按 Ctrl+Enter 发送"></textarea>
+        <button id="btnOptimizePrompt" class="btn-optimize" title="让 AI 优化提示词">
+          <svg class="optimize-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg>
+          <span class="optimize-label">优化提示词</span>
+        </button>
+      </div>
     </div>
     <button class="btn-send" id="btnSend" title="发送 (Ctrl+Enter)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -875,6 +916,59 @@ const DEFAULT_API_KEY = 'sk-CiADGDKSQUY5exB5ZWFYE1tfCnN7DAFQ5I8bapJHJGM8vvyP';
 function getApiKey() {
   return apiKey || DEFAULT_API_KEY;
 }
+
+const OPTIMIZE_PROMPT_HEAD = 'SYSTEM：梳理优化提示词，将用户输入的晦涩难懂或乱七八糟的提示词梳理成条理清晰并富含细节的新提示词。\n---\n';
+
+async function optimizePrompt() {
+  const userText = $promptInput.value.trim();
+  if (!userText) { alert('请先输入提示词'); return; }
+
+  if ($btnOptimize.classList.contains('loading')) return;
+  $btnOptimize.classList.add('loading');
+  $btnOptimize.disabled = true;
+  $btnOptimize.querySelector('.optimize-label').textContent = '优化中…';
+
+  try {
+    const fullPrompt = OPTIMIZE_PROMPT_HEAD + userText;
+    const body = {
+      model: $chatModel.value,
+      messages: [{ role: 'user', content: fullPrompt }],
+      temperature: parseFloat($chatTemp.value),
+      max_tokens: parseInt($chatMaxTokens.value),
+      stream: false,
+    };
+
+    const resp = await fetch(CONFIG.chatEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getApiKey()}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`API ${resp.status}: ${errText.slice(0, 200)}`);
+    }
+
+    const data = await resp.json();
+    const optimized = data?.choices?.[0]?.message?.content?.trim();
+    if (!optimized) throw new Error('API 返回内容为空');
+
+    $promptInput.value = optimized;
+    $promptInput.style.height = 'auto';
+    $promptInput.style.height = Math.min($promptInput.scrollHeight, 150) + 'px';
+    $promptInput.focus();
+  } catch (err) {
+    console.error('优化提示词失败:', err);
+    alert('优化失败：' + (err.message || '未知错误'));
+  } finally {
+    $btnOptimize.classList.remove('loading');
+    $btnOptimize.disabled = false;
+    $btnOptimize.querySelector('.optimize-label').textContent = '优化提示词';
+  }
+}
 let currentAbortController = null;  // 流式请求的 AbortController
 let refUrls = [];
 let convPendingRequests = {};  // { convId: count } — pending 请求计数，0=idle，>0=loading
@@ -892,6 +986,7 @@ const $promptInput  = document.getElementById('promptInput');
 const $refUrlInput  = document.getElementById('refUrlInput');
 const $refUrlTags   = document.getElementById('refUrlTags');
 const $btnSend      = document.getElementById('btnSend');
+const $btnOptimize  = document.getElementById('btnOptimizePrompt');
 const $chatMessages = document.getElementById('chatMessages');
 const $statusDot    = document.getElementById('statusDot');
 const $statusText   = document.getElementById('statusText');
@@ -1344,6 +1439,7 @@ async function init() {
   });
 
   $btnSend.addEventListener('click', sendMessage);
+  $btnOptimize.addEventListener('click', optimizePrompt);
   $lightbox.addEventListener('click', () => $lightbox.classList.remove('active'));
   $promptInput.addEventListener('input', autoResizeTextarea);
 
