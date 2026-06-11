@@ -590,8 +590,8 @@
         <option value="1152x768" selected>1152 x 768（横版）</option>
         <option value="768x1152">768 x 1152（竖版）</option>
         <option value="1024x576">1024 x 576（16:9）</option>
-        <option value="720x480">720 x 480</option>
-        <option value="480x720">480 x 720</option>
+        <option value="768x512">768 x 512</option>
+        <option value="512x768">512 x 768</option>
         <option value="2048x1366">2048 x 1366</option>
         <option value="1366x2048">1366 x 2048</option>
       </select>
@@ -755,6 +755,7 @@ async function dbDelete(id) {
 const CONFIG = {
   imageEndpoint: 'https://apihub.agnes-ai.com/v1/images/generations',
   videoEndpoint: 'https://apihub.agnes-ai.com/v1/videos',
+  videoQueryEndpoint: 'https://apihub.agnes-ai.com/agnesapi',
   chatEndpoint: 'https://apihub.agnes-ai.com/v1/chat/completions',
 };
 
@@ -1300,7 +1301,7 @@ function isValidUrl(s) { try { new URL(s); return true; } catch { return false; 
 function renderRefTags() {
   $refUrlTags.innerHTML = refUrls.map((url, i) => `
     <span class="ref-url-tag">
-      <img class="ref-thumb" src="${escapeHtml(url)}" alt="参考图" title="${escapeHtml(url)}"
+      <img class="ref-thumb" src="${escapeHtml(url)}" alt="参考图" title="${escapeHtml(url)}" referrerpolicy="no-referrer"
            onerror="this.style.display='none';this.nextElementSibling.style.display='none'"
            onclick="openLightbox('${escapeHtml(url)}')" />
       <span class="ref-del" onclick="removeRefUrl(${i})" title="移除">&times;</span>
@@ -1347,7 +1348,7 @@ function updateStatus() {
 }
 
 // ==================== Send ====================
-function buildChatMessages(prompt, stopIdx = undefined) {
+function buildChatMessages(prompt, imageUrls = [], stopIdx = undefined) {
   const conv = getCurrentConv();
   if (!conv) return [{ role: 'user', content: prompt }];
 
@@ -1363,13 +1364,30 @@ function buildChatMessages(prompt, stopIdx = undefined) {
     if (!msg.apiBodies || msg.apiBodies._endpoint !== CONFIG.chatEndpoint) continue;
 
     if (msg.role === 'user') {
-      messages.push({ role: 'user', content: msg.text });
+      // 历史消息有图片时，构造 content 数组
+      const msgImages = msg.refImages || [];
+      if (msgImages.length > 0) {
+        const content = [{ type: 'text', text: msg.text }];
+        msgImages.forEach(url => content.push({ type: 'image_url', image_url: { url } }));
+        messages.push({ role: 'user', content });
+      } else {
+        messages.push({ role: 'user', content: msg.text });
+      }
     } else if (msg.role === 'ai' && !msg.isError && msg.text) {
       messages.push({ role: 'assistant', content: msg.text });
     }
   }
 
-  if (prompt) messages.push({ role: 'user', content: prompt });
+  // 当前提交的 prompt（可能带图片）
+  if (prompt) {
+    if (imageUrls && imageUrls.length > 0) {
+      const content = [{ type: 'text', text: prompt }];
+      imageUrls.forEach(url => content.push({ type: 'image_url', image_url: { url } }));
+      messages.push({ role: 'user', content });
+    } else {
+      messages.push({ role: 'user', content: prompt });
+    }
+  }
 
   // 最多保留 30 条消息（不含 system prompt）
   const MAX_MSGS = 30;
@@ -1388,7 +1406,7 @@ function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride =
 
   if (cMode === 'chat') {
     // 对话请求体
-    const messages = buildChatMessages(prompt, stopIdx);
+    const messages = buildChatMessages(prompt, imageUrls, stopIdx);
     const body = {
       model: $chatModel.value,
       messages: messages,
@@ -1445,9 +1463,10 @@ async function sendMessage() {
   if (getChatMode() === 'chat') {
     $promptInput.value = '';
     $promptInput.style.height = 'auto';
+    const userRefs = [...refUrls];
     refUrls = [];
     renderRefTags();
-    await sendChatMessage(prompt);
+    await sendChatMessage(prompt, userRefs);
     return;
   }
 
@@ -1508,9 +1527,11 @@ async function sendMessage() {
 
     if (isVideo) {
       const taskId = result.data?.task_id;
+      const videoId = result.data?.video_id;
       if (taskId) {
         aiMsg.text = '\u2705 视频任务已提交';
         aiMsg.apiBodies.videoTaskId = taskId;
+        aiMsg.apiBodies.videoId = videoId || taskId;
         aiMsg.apiBodies.videoStatus = 'queued';
         aiMsg.apiBodies.videoProgress = 0;
         // 自动轮询
@@ -1585,18 +1606,18 @@ function getEndpoint() {
   return CONFIG.imageEndpoint;
 }
 
-async function sendChatMessage(prompt) {
+async function sendChatMessage(prompt, imageUrls = []) {
   const conv = getCurrentConv();
   if (!conv) return;
   const sourceConvId = currentConvId;
   addPendingRequest(sourceConvId);
 
-  const reqBody = buildRequestBody(prompt, []);
+  const reqBody = buildRequestBody(prompt, imageUrls);
   const reqBodyStr = JSON.stringify(reqBody, null, 2);
   const endpoint = CONFIG.chatEndpoint;
 
-  // 追加 user 消息并持久化
-  await addMessageToConv(sourceConvId, 'user', prompt, false, [], [], { requestBody: reqBodyStr, _endpoint: endpoint });
+  // 追加 user 消息并持久化（refImages 用于UI渲染缩略图）
+  await addMessageToConv(sourceConvId, 'user', prompt, false, imageUrls, [], { requestBody: reqBodyStr, _endpoint: endpoint });
   const msgPid = conv.messages[conv.messages.length - 1]._msg_id;
 
   const streamId = 'stream_' + Date.now();
@@ -1851,7 +1872,7 @@ function buildBubbleContent(msg) {
       if (msg.refImages && msg.refImages.length > 0) {
         html += '<div class="ref-images">';
         msg.refImages.forEach(url => {
-          html += `<img src="${escapeHtml(url)}" alt="参考图" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+          html += `<img src="${escapeHtml(url)}" alt="参考图" referrerpolicy="no-referrer" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
         });
         html += '</div>';
       }
@@ -1872,7 +1893,7 @@ function buildBubbleContent(msg) {
       if (msg.genImages && msg.genImages.length > 0) {
         html += '<div class="gen-image-wrapper"><span class="gen-label">&#x1f5bc; 生成结果</span>';
         msg.genImages.forEach(url => {
-          html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+          html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" referrerpolicy="no-referrer" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
         });
         html += '</div>';
       }
@@ -1917,7 +1938,7 @@ function buildBubbleContent(msg) {
       if (msg.refImages && msg.refImages.length > 0) {
         html += '<div class="ref-images">';
         msg.refImages.forEach(url => {
-          html += `<img src="${escapeHtml(url)}" alt="参考图" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+          html += `<img src="${escapeHtml(url)}" alt="参考图" referrerpolicy="no-referrer" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
         });
         html += '</div>';
       }
@@ -1983,18 +2004,16 @@ function buildBubbleContent(msg) {
     }
     html += '</div>';
 
-    // AI 消息底部：时间 + token 统计 + 复制按钮
-    const usage = msg.apiBodies?._usage;
+    // AI 消息底部：时间靠左，字数+复制按钮靠右
+    const charCount = (msg.text || '').length;
     html += `<div class="msg-meta" style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;padding:0 12px;">`;
-    html += '<span style="display:flex;align-items:center;gap:8px;">';
     html += `<span class="msg-time">${formatTime(new Date(msg.time))}</span>`;
-    if (usage) {
-      html += `<span class="msg-tokens" style="font-size:11px;color:var(--text-muted);">`;
-      html += `输入token:${usage.prompt_tokens} &nbsp; 输出token:${usage.completion_tokens} &nbsp; 总token:${usage.total_tokens}`;
-      html += `</span>`;
+    html += '<span style="display:flex;align-items:center;gap:6px;">';
+    if (charCount > 0) {
+      html += `<span style="font-size:11px;color:var(--text-muted);">(${charCount}字)</span>`;
     }
-    html += '</span>';
     html += `<button class="msg-action-btn" onclick="copyAiMessage(this)">&#x1f4cb; 复制内容</button>`;
+    html += '</span>';
     html += `</div>`;
 
     return html;
@@ -2003,7 +2022,7 @@ function buildBubbleContent(msg) {
   if (msg.refImages && msg.refImages.length > 0) {
     html += '<div class="ref-images">';
     msg.refImages.forEach(url => {
-      html += `<img src="${escapeHtml(url)}" alt="参考图" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+      html += `<img src="${escapeHtml(url)}" alt="参考图" referrerpolicy="no-referrer" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
     });
     html += '</div>';
   }
@@ -2030,7 +2049,7 @@ function buildBubbleContent(msg) {
   if (msg.genImages && msg.genImages.length > 0) {
     html += '<div class="gen-image-wrapper"><span class="gen-label">&#x1f5bc; 生成结果</span>';
     msg.genImages.forEach(url => {
-      html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
+      html += `<img src="${escapeHtml(url)}" alt="生成图片" class="gen-image" referrerpolicy="no-referrer" onerror="this.style.display='none'" onclick="openLightbox('${escapeHtml(url)}')"/>`;
     });
     html += '</div>';
   }
@@ -2156,7 +2175,9 @@ async function refreshVideoTask(convId, msgIdx, taskId) {
   if (!msg.apiBodies) return;
 
   try {
-    const resp = await fetch(`${CONFIG.videoEndpoint}/${taskId}`, {
+    const videoId = msg.apiBodies.videoId || taskId;
+    const queryUrl = `${CONFIG.videoQueryEndpoint}?video_id=${videoId}`;
+    const resp = await fetch(queryUrl, {
       headers: { 'Authorization': `Bearer ${getApiKey()}` },
       credentials: 'omit',
       cache: 'no-store',
@@ -2167,7 +2188,7 @@ async function refreshVideoTask(convId, msgIdx, taskId) {
     msg.apiBodies.videoStatus = data.status;
     msg.apiBodies.videoProgress = data.progress || 0;
     // 更新请求/响应体（刷新查询的请求和响应）
-    msg.apiBodies.requestBody = `GET ${CONFIG.videoEndpoint}/${taskId}`;
+    msg.apiBodies.requestBody = `GET ${queryUrl}`;
     msg.apiBodies.responseBody = respStr;
 
     if (data.status === 'completed') {
@@ -2382,7 +2403,8 @@ async function regenerateFromUser(convId, msgIdx) {
     // 临时移除旧 AI 构建正确的请求体（避免 buildChatMessages 收集到空 AI）
     const tmpIdx = conv.messages.indexOf(aiMsg);
     conv.messages.splice(tmpIdx, 1);
-    const reqBody = buildRequestBody('', [], userIdx + 1, roundMode);
+    const userRefs = userMsg.refImages || [];
+    const reqBody = buildRequestBody('', userRefs, userIdx + 1, roundMode);
     conv.messages.splice(tmpIdx, 0, aiMsg);
 
     // 更新用户消息的请求体
@@ -2486,9 +2508,11 @@ async function regenerateFromUser(convId, msgIdx) {
 
     if (isVideo) {
       const taskId = data.task_id;
+      const videoId = data.video_id;
       if (taskId) {
         aiMsg.text = '\u2705 视频任务已提交';
         aiMsg.apiBodies.videoTaskId = taskId;
+        aiMsg.apiBodies.videoId = videoId || taskId;
         aiMsg.apiBodies.videoStatus = 'queued';
         aiMsg.apiBodies.videoProgress = 0;
         // 30 秒后自动轮询
