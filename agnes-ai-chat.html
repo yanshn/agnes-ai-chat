@@ -135,6 +135,42 @@
   }
   .settings-panel.open { display: flex; }
   .sidebar-section { display: flex; flex-direction: column; gap: 4px; }
+  .sidebar input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 4px; border-radius: 2px;
+    background: var(--border); outline: none; cursor: pointer;
+    padding: 0; border: none;
+  }
+  .sidebar input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+    border: 2px solid var(--bg-primary);
+  }
+  /* Toggle switch */
+  .toggle-label {
+    display: flex !important; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted);
+    flex-direction: row; width: 100%;
+  }
+  .toggle-input { display: none; }
+  .toggle-slider {
+    position: relative; width: 36px; height: 20px; flex-shrink: 0;
+    background: var(--border); border-radius: 10px;
+    transition: background 0.2s;
+  }
+  .toggle-slider::before {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--bg-primary); transition: transform 0.2s;
+  }
+  .toggle-input:checked + .toggle-slider {
+    background: var(--accent);
+  }
+  .toggle-input:checked + .toggle-slider::before {
+    transform: translateX(16px);
+  }
   .sidebar-label {
     font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
     color: var(--text-muted);
@@ -149,9 +185,17 @@
     background: var(--bg-input); color: var(--text-primary);
     font-size: 12px; outline: none; transition: border var(--transition);
   }
-  .sidebar input:focus, .sidebar select:focus {
+  .sidebar input:focus, .sidebar select:focus, .sidebar textarea:focus {
     border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow);
   }
+  .sidebar textarea {
+    width: 100%; padding: 10px 12px; resize: vertical;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-input); color: var(--text-primary);
+    font-size: 13px; font-family: inherit; line-height: 1.5;
+    outline: none; transition: border var(--transition);
+  }
+  .sidebar textarea::placeholder { color: var(--text-muted); }
   .api-key-wrapper { position: relative; }
   .api-key-wrapper input { padding-right: 38px; }
   .toggle-key {
@@ -217,7 +261,7 @@
   .avatar.ai-avatar { background: var(--bg-tertiary); }
 
   .bubble {
-    max-width: 75%; padding: 14px 18px; border-radius: var(--radius);
+    max-width: 99%; padding: 14px 18px; border-radius: var(--radius);
     position: relative; word-break: break-word;
   }
   .bubble.user { background: var(--bg-bubble-user); border-bottom-right-radius: 4px; }
@@ -242,6 +286,7 @@
 
   /* Chat bubbles */
   .chat-bubble {
+    max-width: 80%;
     padding: 10px 14px;
     border-radius: var(--radius); line-height: 1.6;
     font-size: 14px; word-break: break-word; margin-bottom: 4px;
@@ -361,7 +406,9 @@
   .bubble.error { background: rgba(224,85,106,0.1); border: 1px solid var(--error); }
   .bubble.error .msg-text { color: var(--error); font-size: 13px; }
 
-  .edit-inline textarea { width: 100%; min-height: 50px; padding: 6px 8px; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary); font-size: 14px; line-height: 1.6; font-family: inherit; resize: vertical; }
+  .chat-bubble { max-width: 99%; }
+  .edit-inline { width: 75vw; min-width: 350px; max-width: 650px; box-sizing: border-box; }
+  .edit-inline textarea { width: 100%; min-height: 120px; padding: 12px 14px; border: 2px solid var(--accent); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary); font-size: 15px; line-height: 1.6; font-family: inherit; resize: vertical; box-sizing: border-box; }
 
   /* Message action buttons */
   .msg-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
@@ -486,6 +533,28 @@
   .sidebar-close-btn { display: none; background: none; border: none; color: var(--text-muted); font-size: 22px; cursor: pointer; padding: 0 4px; margin-left: auto; line-height: 1; }
   .sidebar-close-btn:hover { color: var(--error); }
   .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 199; }
+  #sysPromptOverlay { display: none; }
+  #sysPromptOverlay[style*="flex"] { display: flex !important; }
+  .overlay-textarea {
+    width: 100%; padding: 8px 10px; resize: vertical;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-input); color: var(--text-primary);
+    font-size: 13px; font-family: inherit; line-height: 1.5;
+    outline: none; transition: border var(--transition);
+  }
+  .overlay-textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+  .btn-cancel {
+    padding: 6px 14px; background: var(--bg-input); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    cursor: pointer; font-size: 13px;
+  }
+  .btn-cancel:hover { border-color: var(--text-muted); }
+  .btn-primary {
+    padding: 6px 14px; background: var(--accent); color: #fff;
+    border: 1px solid var(--accent); border-radius: var(--radius-sm);
+    cursor: pointer; font-size: 13px; font-weight: 500;
+  }
+  .btn-primary:hover { opacity: 0.9; }
   .overlay.show { display: block; }
 
   @media (max-width: 767px) {
@@ -549,6 +618,18 @@
     <div class="sidebar-section">
       <label class="sidebar-label">随机种子（可选）</label>
       <input type="number" id="seedInput" placeholder="留空则随机……"/>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">文本系统提示词</label>
+      <textarea id="sysText" rows="2" placeholder="输入文本模式的系统提示词……"></textarea>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">图像系统提示词</label>
+      <textarea id="sysImage" rows="2" placeholder="输入图像模式的系统提示词……"></textarea>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">视频系统提示词</label>
+      <textarea id="sysVideo" rows="2" placeholder="输入视频模式的系统提示词……"></textarea>
     </div>
 
     <div class="sidebar-section">
@@ -625,7 +706,7 @@
     </div>
 
     <div class="sidebar-section">
-      <h3 class="sidebar-group-title">对话配置</h3>
+      <h3 class="sidebar-group-title">文本对话配置</h3>
     </div>
     <div class="sidebar-section">
       <label class="sidebar-label">模型</label>
@@ -634,21 +715,22 @@
       </select>
     </div>
     <div class="sidebar-section">
-      <label class="sidebar-label">系统提示词</label>
-      <textarea id="chatSystem" rows="3" placeholder="设定 AI 角色和行为（可选）……"></textarea>
-    </div>
-    <div class="sidebar-section">
-      <label class="sidebar-label">温度: <span id="chatTempVal">0.7</span></label>
-      <input type="range" id="chatTemp" min="0" max="2" step="0.1" value="0.7" />
+      <label class="sidebar-label">温度: <span id="chatTempVal">1</span></label>
+      <input type="range" id="chatTemp" min="0" max="2" step="0.1" value="1" />
     </div>
     <div class="sidebar-section">
       <label class="sidebar-label">最大 Token</label>
-      <input type="number" id="chatMaxTokens" value="4096" min="1" max="65535" />
+      <input type="number" id="chatMaxTokens" value="8192" min="1" max="65535" />
     </div>
     <div class="sidebar-section">
-      <label class="sidebar-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-        <input type="checkbox" id="chatThinking" />
+      <label class="sidebar-label">上下文提交量: <span id="chatRoundsVal">10</span> 轮</label>
+      <input type="range" id="chatRounds" min="1" max="100" step="1" value="10" />
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label toggle-label">
         深度思考
+        <input type="checkbox" id="chatThinking" class="toggle-input" />
+        <span class="toggle-slider"></span>
       </label>
     </div>
 
@@ -670,6 +752,7 @@
     <span style="margin:0 8px;color:var(--text-muted);display:none">|</span>
     <span id="convNameDisplay" style="color:var(--text-primary);">—</span>
     <div class="header-actions">
+      <button id="btnSysPrompt" title="编辑窗口背景词" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 10px;border-radius:4px;font-size:12px;transition:var(--transition);">&#x1f4c4; 背景词</button>
       <button id="btnRenameConv" title="重命名当前对话" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 10px;border-radius:4px;font-size:12px;transition:var(--transition);">&#x270f; 重命名</button>
       <button id="btnDeleteCurrConv" title="删除当前对话" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 10px;border-radius:4px;font-size:12px;transition:var(--transition);">&#x1f5d1; 删除</button>
       <button id="btnFullscreen" title="全屏浏览" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 8px;border-radius:4px;font-size:16px;transition:var(--transition);line-height:1;">&#x26F6;</button>
@@ -702,6 +785,31 @@
 
 <div class="lightbox" id="lightbox"><img id="lightboxImg" src="" alt="放大查看"></div>
 <div class="overlay" id="overlay"></div>
+
+<!-- 背景词编辑弹窗 -->
+<div id="sysPromptOverlay" class="overlay" style="display:none;align-items:center;justify-content:center;">
+  <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:20px;width:520px;max-width:90vw;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+    <h3 style="margin:0 0 14px;font-size:16px;color:var(--text-primary);font-weight:600;">编辑当前窗口背景词</h3>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div>
+        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">文本背景词</label>
+        <textarea id="sysPromptText" rows="3" class="overlay-textarea" placeholder="文本模式的系统提示词……"></textarea>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">图像背景词</label>
+        <textarea id="sysPromptImage" rows="3" class="overlay-textarea" placeholder="图像模式的系统提示词……"></textarea>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">视频背景词</label>
+        <textarea id="sysPromptVideo" rows="3" class="overlay-textarea" placeholder="视频模式的系统提示词……"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+      <button id="btnSysPromptCancel" class="btn-cancel">取消</button>
+      <button id="btnSysPromptSave" class="btn-primary">保存</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ==================== IndexedDB ====================
@@ -792,10 +900,14 @@ const $lightbox     = document.getElementById('lightbox');
 const $lightboxImg  = document.getElementById('lightboxImg');
 const $convList     = document.getElementById('convList');
 const $chatModel    = document.getElementById('chatModel');
-const $chatSystem   = document.getElementById('chatSystem');
+const $sysText      = document.getElementById('sysText');
+const $sysImage     = document.getElementById('sysImage');
+const $sysVideo     = document.getElementById('sysVideo');
 const $chatTemp     = document.getElementById('chatTemp');
 const $chatMaxTokens = document.getElementById('chatMaxTokens');
 const $chatThinking = document.getElementById('chatThinking');
+const $chatRounds   = document.getElementById('chatRounds');
+const $chatRoundsVal = document.getElementById('chatRoundsVal');
 
 // ==================== Conversation helpers ====================
 function getCurrentConv() {
@@ -835,6 +947,11 @@ async function createConversation(activate = true) {
     messages: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    _sysPrompts: {
+      text:  localStorage.getItem('agnes_sys_text')  || '',
+      image: localStorage.getItem('agnes_sys_image') || '',
+      video: localStorage.getItem('agnes_sys_video') || '',
+    },
   };
   await dbPut(conv);
   conversations.push(conv);
@@ -974,6 +1091,46 @@ function startRename(id) {
 function startHeaderRename() {
   const conv = getCurrentConv();
   if (!conv) return;
+}
+
+function openSysPromptDialog() {
+  const conv = getCurrentConv();
+  if (!conv) { alert('请先选择一个对话窗口'); return; }
+  if (!conv._sysPrompts) {
+    conv._sysPrompts = {
+      text:  localStorage.getItem('agnes_sys_text')  || '',
+      image: localStorage.getItem('agnes_sys_image') || '',
+      video: localStorage.getItem('agnes_sys_video') || '',
+    };
+  }
+  document.getElementById('sysPromptText').value = conv._sysPrompts.text || '';
+  document.getElementById('sysPromptImage').value = conv._sysPrompts.image || '';
+  document.getElementById('sysPromptVideo').value = conv._sysPrompts.video || '';
+  const overlay = document.getElementById('sysPromptOverlay');
+  overlay.style.display = 'flex';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+}
+
+function closeSysPromptDialog() {
+  document.getElementById('sysPromptOverlay').style.display = 'none';
+}
+
+async function saveSysPromptDialog() {
+  const conv = getCurrentConv();
+  if (!conv) { closeSysPromptDialog(); return; }
+  if (!conv._sysPrompts) conv._sysPrompts = {};
+  conv._sysPrompts.text  = document.getElementById('sysPromptText').value;
+  conv._sysPrompts.image = document.getElementById('sysPromptImage').value;
+  conv._sysPrompts.video = document.getElementById('sysPromptVideo').value;
+  conv.updatedAt = Date.now();
+  await dbPut(conv);
+  closeSysPromptDialog();
+}
+
+function startHeaderRename() {
+  const conv = getCurrentConv();
+  if (!conv) return;
   const oldName = conv.name;
   $convNameDisp.innerHTML = `<input value="${escapeHtml(oldName)}" style="padding:2px 8px;border:1px solid var(--accent);border-radius:4px;background:var(--bg-input);color:var(--text-primary);font-size:14px;font-family:inherit;outline:none;width:300px;" />`;
   const input = $convNameDisp.querySelector('input');
@@ -1011,13 +1168,17 @@ async function init() {
   $videoRes.value = localStorage.getItem('agnes_video_res') || '1152x768';
   document.getElementById('numFrames').value = localStorage.getItem('agnes_video_frames') || '121';
   document.getElementById('frameRate').value = localStorage.getItem('agnes_video_fps') || '24';
-  $seedInput.value = localStorage.getItem('agnes_seed') || '';
+  $seedInput.value = localStorage.getItem('agnes_seed') || '1';
   $chatModel.value = localStorage.getItem('agnes_chat_model') || 'agnes-2.0-flash';
-  $chatSystem.value = localStorage.getItem('agnes_chat_system') || '';
-  $chatTemp.value = localStorage.getItem('agnes_chat_temp') || '0.7';
+  $sysText.value = localStorage.getItem('agnes_sys_text') || '';
+  $sysImage.value = localStorage.getItem('agnes_sys_image') || '';
+  $sysVideo.value = localStorage.getItem('agnes_sys_video') || '';
+  $chatTemp.value = localStorage.getItem('agnes_chat_temp') || '1';
   document.getElementById('chatTempVal').textContent = $chatTemp.value;
-  $chatMaxTokens.value = localStorage.getItem('agnes_chat_max_tokens') || '4096';
+  $chatMaxTokens.value = localStorage.getItem('agnes_chat_max_tokens') || '8192';
   $chatThinking.checked = localStorage.getItem('agnes_chat_thinking') === 'true';
+  $chatRounds.value = localStorage.getItem('agnes_chat_rounds') || '10';
+  $chatRoundsVal.textContent = $chatRounds.value;
 
   // 加载历史对话
   conversations = await dbGetAll();
@@ -1053,13 +1214,22 @@ async function init() {
   document.getElementById('frameRate').addEventListener('change', (e) => { localStorage.setItem('agnes_video_fps', e.target.value); });
   $seedInput.addEventListener('input', () => { localStorage.setItem('agnes_seed', $seedInput.value.trim()); });
   $chatModel.addEventListener('change', () => { localStorage.setItem('agnes_chat_model', $chatModel.value); });
-  $chatSystem.addEventListener('input', () => { localStorage.setItem('agnes_chat_system', $chatSystem.value); });
+  $sysText.addEventListener('input', () => { localStorage.setItem('agnes_sys_text', $sysText.value); });
+  $sysImage.addEventListener('input', () => { localStorage.setItem('agnes_sys_image', $sysImage.value); });
+  $sysVideo.addEventListener('input', () => { localStorage.setItem('agnes_sys_video', $sysVideo.value); });
   $chatTemp.addEventListener('input', () => {
     localStorage.setItem('agnes_chat_temp', $chatTemp.value);
     document.getElementById('chatTempVal').textContent = $chatTemp.value;
   });
   $chatMaxTokens.addEventListener('input', () => { localStorage.setItem('agnes_chat_max_tokens', $chatMaxTokens.value); });
   $chatThinking.addEventListener('change', () => { localStorage.setItem('agnes_chat_thinking', $chatThinking.checked); });
+  $chatRounds.addEventListener('input', () => {
+    localStorage.setItem('agnes_chat_rounds', $chatRounds.value);
+    $chatRoundsVal.textContent = $chatRounds.value;
+  });
+  $chatRounds.addEventListener('change', () => {
+    $chatRoundsVal.textContent = $chatRounds.value;
+  });
 
   document.getElementById('settingsToggle').addEventListener('click', () => {
     const panel = document.getElementById('settingsPanel');
@@ -1078,6 +1248,12 @@ async function init() {
   document.getElementById('btnMenu').addEventListener('click', () => { toggleSidebar(true); });
   document.getElementById('btnCloseSidebar').addEventListener('click', () => { toggleSidebar(false); });
   document.getElementById('overlay').addEventListener('click', () => { toggleSidebar(false); });
+  document.getElementById('btnSysPrompt').addEventListener('click', openSysPromptDialog);
+  document.getElementById('btnSysPromptCancel').addEventListener('click', closeSysPromptDialog);
+  document.getElementById('btnSysPromptSave').addEventListener('click', saveSysPromptDialog);
+  document.getElementById('sysPromptOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'sysPromptOverlay') closeSysPromptDialog();
+  });
   document.getElementById('btnDeleteCurrConv').addEventListener('click', () => {
     if (currentConvId) deleteConversation(currentConvId);
   });
@@ -1353,7 +1529,7 @@ function buildChatMessages(prompt, imageUrls = [], stopIdx = undefined) {
   if (!conv) return [{ role: 'user', content: prompt }];
 
   const messages = [];
-  const sys = $chatSystem.value.trim();
+  const sys = (conv._sysPrompts?.text || '').trim();
   if (sys) messages.push({ role: 'system', content: sys });
 
   // 只收集到 stopIdx 为止（默认全部），且仅包含文字对话模式的消息
@@ -1389,16 +1565,39 @@ function buildChatMessages(prompt, imageUrls = [], stopIdx = undefined) {
     }
   }
 
-  // 最多保留 30 条消息（不含 system prompt）
-  const MAX_MSGS = 30;
+  // 按上下文提交量截断历史消息（保留 system + 最近 N 轮）
+  const rounds = parseInt($chatRounds.value) || 10;
   const sysCount = sys ? 1 : 0;
-  if (messages.length > sysCount + MAX_MSGS) {
-    const kept = messages.slice(sysCount).slice(-MAX_MSGS);
-    if (sys) kept.unshift(messages[0]);
-    return kept;
+  const promptCount = prompt ? 1 : 0;
+  const historyStart = sysCount;
+  const historyEnd = messages.length - promptCount;
+  const historyMessages = messages.slice(historyStart, historyEnd);
+  const maxHistory = rounds * 2;
+  if (historyMessages.length > maxHistory) {
+    const keep = historyMessages.slice(-maxHistory);
+    const final = [...messages.slice(0, historyStart), ...keep, ...messages.slice(historyEnd)];
+    return final;
   }
 
   return messages;
+}
+
+function getSysPromptFor(mode) {
+  const conv = getCurrentConv();
+  return conv?._sysPrompts?.[mode] || '';
+}
+
+// 拼接系统提示词和用户提示词，分隔符为 \n---\n
+function concatSysPrompt(sysPrompt, userPrompt) {
+  if (!sysPrompt || !sysPrompt.trim()) return userPrompt;
+  return `${sysPrompt}\n---\n${userPrompt}`;
+}
+
+// 提取用户提示词部分（去掉前缀的系统提示词）
+function extractUserPrompt(text) {
+  if (!text) return '';
+  const idx = text.indexOf('\n---\n');
+  return idx >= 0 ? text.substring(idx + 5) : text;
 }
 
 function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride = null) {
@@ -1422,10 +1621,11 @@ function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride =
 
   if (cMode === 'video') {
     // 视频请求体
+    const fullPrompt = concatSysPrompt(getSysPromptFor('video'), prompt);
     const model = $videoModel.value;
     const res = $videoRes.value.split('x');
     const body = {
-      model, prompt,
+      model, prompt: fullPrompt,
       width: parseInt(res[0]),
       height: parseInt(res[1]),
       num_frames: parseInt(document.getElementById('numFrames').value),
@@ -1444,8 +1644,9 @@ function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride =
   }
 
   // 图片请求体
+  const fullPrompt = concatSysPrompt(getSysPromptFor('image'), prompt);
   const model = $imageModel.value;
-  const body = { model, prompt, size: $sizeSelect.value, extra_body: { response_format: 'url' } };
+  const body = { model, prompt: fullPrompt, size: $sizeSelect.value, extra_body: { response_format: 'url' } };
   const seedVal = $seedInput.value.trim();
   if (seedVal) body.seed = parseInt(seedVal, 10);
   if (imageUrls && imageUrls.length > 0) {
@@ -1480,8 +1681,9 @@ async function sendMessage() {
   const reqBody = buildRequestBody(prompt, userRefs);
   const reqBodyStr = JSON.stringify(reqBody, null, 2);
 
-  // 1. 创建 user 消息
-  await addMessageToConv(sourceConvId, 'user', prompt, false, userRefs, [], { requestBody: reqBodyStr, _endpoint: getEndpoint() });
+  // 1. 创建 user 消息（图像/视频模式只存用户输入部分，不含系统提示词）
+  const displayPrompt = getChatMode() === 'chat' ? prompt : extractUserPrompt(prompt);
+  await addMessageToConv(sourceConvId, 'user', displayPrompt, false, userRefs, [], { requestBody: reqBodyStr, _endpoint: getEndpoint() });
 
   const conv = conversations.find(c => c.id === sourceConvId);
   const msgPid = conv ? conv.messages[conv.messages.length - 1]._msg_id : null;
@@ -2423,6 +2625,9 @@ async function regenerateFromUser(convId, msgIdx) {
     }
   } catch (e) { /* 忽略解析错误 */ }
   reqParams.prompt = userMsg.text;
+  // 重新拼接当前窗口的系统提示词（避免使用历史记录中的旧版本）
+  const sysKey = roundMode === 'video' ? 'video' : 'image';
+  reqParams.prompt = concatSysPrompt(getSysPromptFor(sysKey), userMsg.text);
 
   addPendingRequest(convId);
 
