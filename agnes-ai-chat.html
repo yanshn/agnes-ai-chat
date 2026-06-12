@@ -2020,7 +2020,6 @@ async function sendChatMessage(prompt, imageUrls = []) {
   const streamId = 'stream_' + Date.now();
   await addMessageToConv(sourceConvId, 'ai', '', false, [], [], { _endpoint: endpoint, _msg_pid: msgPid, _streamId: streamId, _streaming: true });
 
-  renderAllMessages();
   scrollToBottom();
 
   await streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqBody);
@@ -2049,9 +2048,8 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
       if (aiMsg) { aiMsg.apiBodies._streaming = false; aiMsg.apiBodies._incomplete = true; await dbPut(conv); }
     } else {
       const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
-      if (aiMsg) { aiMsg.text = '网络连接失败，请检查网络后重试'; aiMsg.isError = true; aiMsg.apiBodies._streaming = false; await dbPut(conv); }
+      if (aiMsg) { aiMsg.text = '网络连接失败，请检查网络后重试'; aiMsg.isError = true; aiMsg.apiBodies._streaming = false; await dbPut(conv); updateMessageNode(conv.messages.indexOf(aiMsg)); }
     }
-    renderAllMessages();
     return;
   }
 
@@ -2067,9 +2065,8 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
       else if (status === 429) aiMsg.text = '请求过于频繁，请稍后重试';
       else if (status >= 500) aiMsg.text = `服务暂时不可用 (HTTP ${status})，请稍后重试`;
       else aiMsg.text = `请求失败 (HTTP ${status})`;
-      await dbPut(conv);
+      await dbPut(conv); updateMessageNode(conv.messages.indexOf(aiMsg));
     }
-    renderAllMessages();
     return;
   }
 
@@ -2191,9 +2188,8 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
       aiMsg.apiBodies._usage = usageTokens;
     }
     aiMsg.time = new Date().toISOString();
-    await dbPut(conv);
+    await dbPut(conv); updateMessageNode(conv.messages.indexOf(aiMsg));
   }
-  renderAllMessages();
 }
 
 async function callAgnesAPI(prompt, imageUrls) {
@@ -2241,7 +2237,7 @@ async function addMessageToConv(convId, role, text, isError = false, refImages =
   conv.updatedAt = Date.now();
   await dbPut(conv);
   if (convId === currentConvId) {
-    renderAllMessages();
+    insertMessageNode(msg, conv.messages.length - 1);
   }
   renderConvList();
 }
@@ -2509,6 +2505,59 @@ function buildBubbleContent(msg) {
   return html;
 }
 
+// ==================== 增量 DOM 原语 ====================
+
+function buildMessageNode(msg, idx) {
+  msg._convId = currentConvId;
+  msg._idx = idx;
+  const isUser = msg.role === 'user';
+  const bubbleClass = `bubble ${msg.role}${msg.isError ? ' error' : ''}`;
+  const row = document.createElement('div');
+  row.className = `message-row ${msg.role}`;
+  row.setAttribute('data-msg-idx', idx);
+  let html = `<div class="avatar ${isUser ? 'user-avatar' : 'ai-avatar'}">${isUser ? '&#x1f464;' : '&#x1f916;'}</div>`;
+  html += `<div class="${bubbleClass}">`;
+  html += buildBubbleContent(msg);
+  html += '</div>';
+  row.innerHTML = html;
+  return row;
+}
+
+function insertMessageNode(msg, idx) {
+  if (idx < 0) idx = $chatMessages.children.length;
+  const node = buildMessageNode(msg, idx);
+  $chatMessages.appendChild(node);
+}
+
+function updateMessageNode(idx) {
+  const conv = getCurrentConv();
+  if (!conv || !conv.messages[idx]) return;
+  const msg = conv.messages[idx];
+  const row = $chatMessages.querySelector(`[data-msg-idx="${idx}"]`);
+  if (!row) return;
+  const bubble = row.querySelector('.bubble');
+  if (!bubble) return;
+  msg._convId = currentConvId;
+  msg._idx = idx;
+  bubble.innerHTML = buildBubbleContent(msg);
+}
+
+function removeMessagePairNode(idx) {
+  // 移除 user(idx) 和 ai(idx+1) 这对消息
+  const rowUser = $chatMessages.querySelector(`[data-msg-idx="${idx}"]`);
+  const rowAi = $chatMessages.querySelector(`[data-msg-idx="${idx+1}"]`);
+  if (rowUser) rowUser.remove();
+  if (rowAi) rowAi.remove();
+  // 重新编号后续节点
+  const allRows = $chatMessages.querySelectorAll('[data-msg-idx]');
+  allRows.forEach(r => {
+    const oldIdx = parseInt(r.getAttribute('data-msg-idx'));
+    if (oldIdx > idx + 1) {
+      r.setAttribute('data-msg-idx', oldIdx - 2);
+    }
+  });
+}
+
 function renderAllMessages() {
   const msgs = getMessages();
   console.log('[renderAllMessages] msgs=' + msgs.length + ' convId=' + currentConvId, new Date().toISOString());
@@ -2522,22 +2571,9 @@ function renderAllMessages() {
       </div>`;
     return;
   }
-
   msgs.forEach((msg, idx) => {
-    msg._convId = currentConvId;
-    msg._idx = idx;
-    const row = document.createElement('div');
-    row.className = `message-row ${msg.role}`;
-    row.setAttribute('data-msg-idx', idx);
-    const isUser = msg.role === 'user';
-    const bubbleClass = `bubble ${msg.role}${msg.isError ? ' error' : ''}`;
-
-    let html = `<div class="avatar ${isUser ? 'user-avatar' : 'ai-avatar'}">${isUser ? '&#x1f464;' : '&#x1f916;'}</div>`;
-    html += `<div class="${bubbleClass}">`;
-    html += buildBubbleContent(msg);
-    html += '</div>';
-    row.innerHTML = html;
-    $chatMessages.appendChild(row);
+    const node = buildMessageNode(msg, idx);
+    $chatMessages.appendChild(node);
   });
 }
 
