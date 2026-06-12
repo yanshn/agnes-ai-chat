@@ -453,7 +453,7 @@
     padding: 16px 24px; border-top: 1px solid var(--border);
     background: var(--bg-secondary); display: flex; gap: 10px; align-items: flex-end;
     flex-shrink: 0;
-    position: relative; min-height: 135px; max-height: 80vh; overflow: hidden;
+    position: relative; min-height: 135px; max-height: 80vh;
   }
   .drag-handle {
     position: absolute;
@@ -692,6 +692,10 @@
       <label class="sidebar-label">视频系统提示词</label>
       <textarea id="sysVideo" rows="2" placeholder="输入视频模式的系统提示词……"></textarea>
     </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">提示词优化词</label>
+      <textarea id="sysOptimize" rows="2" placeholder="用于'优化提示词'功能的系统提示词……"></textarea>
+    </div>
 
     <div class="sidebar-section">
       <h3 class="sidebar-group-title">生图配置</h3>
@@ -833,7 +837,7 @@
         <input type="file" id="refFileInput" accept="image/*" multiple style="display:none" />
         <div style="position:relative">
           <button id="btnChatMode" title="切换对话模式" style="flex-shrink:0;padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;font-size:16px;line-height:1;min-width:36px;">&#x1f3a8;</button>
-          <div id="chatModeMenu" style="display:none;position:absolute;top:100%;left:0;z-index:100;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 4px 12px rgba(0,0,0,0.15);min-width:100px;padding:4px 0;">
+          <div id="chatModeMenu" style="display:none;position:absolute;bottom:100%;left:0;z-index:100;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 -4px 12px rgba(0,0,0,0.15);min-width:100px;padding:4px 0;">
             <div data-mode="image" style="padding:8px 16px;cursor:pointer;font-size:13px;white-space:nowrap;">&#x1f3a8; 图片</div>
             <div data-mode="video" style="padding:8px 16px;cursor:pointer;font-size:13px;">&#x1f3ac; 视频</div>
             <div data-mode="chat" style="padding:8px 16px;cursor:pointer;font-size:13px;">&#x1f4ac; 对话</div>
@@ -844,7 +848,7 @@
         <div id="refUrlTags" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
       </div>
       <div style="position:relative;height:100%">
-        <textarea id="promptInput" rows="3" placeholder="描述你想要生成的图像，或用自然语言描述如何编辑参考图……&#10;提示：按 Ctrl+Enter 发送" style="height:100%"></textarea>
+        <textarea id="promptInput" placeholder="描述你想要生成的图像，或用自然语言描述如何编辑参考图……&#10;提示：按 Ctrl+Enter 发送" style="height:100%"></textarea>
         <button id="btnOptimizePrompt" class="btn-optimize" title="让 AI 优化提示词">
           <svg class="optimize-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg>
           <span class="optimize-label">优化提示词</span>
@@ -950,8 +954,6 @@ function getApiKey() {
   return apiKey || DEFAULT_API_KEY;
 }
 
-const OPTIMIZE_PROMPT_HEAD = 'SYSTEM：梳理优化提示词，将用户输入的晦涩难懂或乱七八糟的提示词梳理成条理清晰并富含细节的新提示词。\n---\n';
-
 async function optimizePrompt() {
   const userText = $promptInput.value.trim();
   if (!userText) { alert('请先输入提示词'); return; }
@@ -962,7 +964,8 @@ async function optimizePrompt() {
   $btnOptimize.querySelector('.optimize-label').textContent = '优化中…';
 
   try {
-    const fullPrompt = OPTIMIZE_PROMPT_HEAD + userText;
+    const sysHead = ($sysOptimize.value || '').trim();
+    const fullPrompt = sysHead ? `${sysHead}\n${userText}` : userText;
     const body = {
       model: $chatModel.value,
       messages: [{ role: 'user', content: fullPrompt }],
@@ -1031,6 +1034,7 @@ const $chatModel    = document.getElementById('chatModel');
 const $sysText      = document.getElementById('sysText');
 const $sysImage     = document.getElementById('sysImage');
 const $sysVideo     = document.getElementById('sysVideo');
+const $sysOptimize  = document.getElementById('sysOptimize');
 const $chatTemp     = document.getElementById('chatTemp');
 const $chatMaxTokens = document.getElementById('chatMaxTokens');
 const $chatThinking = document.getElementById('chatThinking');
@@ -1104,7 +1108,7 @@ async function switchConversation(id) {
   refUrls = [];
   $promptInput.value = '';
   $refUrlInput.value = '';
-  $promptInput.style.height = 'auto';
+  $promptInput.style.height = '100%';
   renderRefTags();
   renderConvList();
   renderAllMessages();
@@ -1301,6 +1305,7 @@ async function init() {
   $sysText.value = localStorage.getItem('agnes_sys_text') || '';
   $sysImage.value = localStorage.getItem('agnes_sys_image') || '';
   $sysVideo.value = localStorage.getItem('agnes_sys_video') || '';
+  $sysOptimize.value = localStorage.getItem('agnes_sys_optimize') || 'SYSTEM：梳理优化提示词，将用户输入的晦涩难懂或乱七八糟的提示词梳理成条理清晰并富含细节的新提示词。\n-----SYSTEM#USER#SPLIT-----\n';
   $chatTemp.value = localStorage.getItem('agnes_chat_temp') || '1';
   document.getElementById('chatTempVal').textContent = $chatTemp.value;
   $chatMaxTokens.value = localStorage.getItem('agnes_chat_max_tokens') || '8192';
@@ -1345,6 +1350,7 @@ async function init() {
   $sysText.addEventListener('input', () => { localStorage.setItem('agnes_sys_text', $sysText.value); });
   $sysImage.addEventListener('input', () => { localStorage.setItem('agnes_sys_image', $sysImage.value); });
   $sysVideo.addEventListener('input', () => { localStorage.setItem('agnes_sys_video', $sysVideo.value); });
+  $sysOptimize.addEventListener('input', () => { localStorage.setItem('agnes_sys_optimize', $sysOptimize.value); });
   $chatTemp.addEventListener('input', () => {
     localStorage.setItem('agnes_chat_temp', $chatTemp.value);
     document.getElementById('chatTempVal').textContent = $chatTemp.value;
@@ -1476,28 +1482,34 @@ async function init() {
   $lightbox.addEventListener('click', () => $lightbox.classList.remove('active'));
   $promptInput.addEventListener('input', autoResizeTextarea);
 
-  // 拖拽调整 input-area 高度
+  // 拖拽调整 input-area 高度（桌面）
   let isDragging = false, dragStartY = 0, dragStartHeight = 0;
-  $dragHandle.addEventListener('mousedown', (e) => {
-    e.preventDefault();
+  function onDragStart(clientY) {
     isDragging = true;
-    dragStartY = e.clientY;
+    dragStartY = clientY;
     dragStartHeight = $inputArea.offsetHeight;
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'ns-resize';
-  });
-  document.addEventListener('mousemove', (e) => {
+  }
+  function onDragMove(clientY) {
     if (!isDragging) return;
-    const dy = dragStartY - e.clientY;
+    const dy = dragStartY - clientY;
     const maxH = window.innerHeight * 0.8;
     $inputArea.style.height = Math.max(135, Math.min(maxH, dragStartHeight + dy)) + 'px';
-  });
-  document.addEventListener('mouseup', () => {
+  }
+  function onDragEnd() {
     if (!isDragging) return;
     isDragging = false;
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
-  });
+  }
+  $dragHandle.addEventListener('mousedown', (e) => { e.preventDefault(); onDragStart(e.clientY); });
+  document.addEventListener('mousemove', (e) => onDragMove(e.clientY));
+  document.addEventListener('mouseup', onDragEnd);
+  // 触摸设备支持
+  $dragHandle.addEventListener('touchstart', (e) => { e.preventDefault(); onDragStart(e.touches[0].clientY); }, { passive: false });
+  document.addEventListener('touchmove', (e) => onDragMove(e.touches[0].clientY), { passive: false });
+  document.addEventListener('touchend', onDragEnd);
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.ctrlKey && !e.shiftKey) {
@@ -1739,17 +1751,17 @@ function getSysPromptFor(mode) {
   return conv?._sysPrompts?.[mode] || '';
 }
 
-// 拼接系统提示词和用户提示词，分隔符为 \n---\n
+// 拼接系统提示词和用户提示词，分隔符为 \n-----SYSTEM#USER#SPLIT-----\n
 function concatSysPrompt(sysPrompt, userPrompt) {
   if (!sysPrompt || !sysPrompt.trim()) return userPrompt;
-  return `${sysPrompt}\n---\n${userPrompt}`;
+  return `${sysPrompt}\n-----SYSTEM#USER#SPLIT-----\n${userPrompt}`;
 }
 
 // 提取用户提示词部分（去掉前缀的系统提示词）
 function extractUserPrompt(text) {
   if (!text) return '';
-  const idx = text.indexOf('\n---\n');
-  return idx >= 0 ? text.substring(idx + 5) : text;
+  const idx = text.indexOf('\n-----SYSTEM#USER#SPLIT-----\n');
+  return idx >= 0 ? text.substring(idx + 30) : text;
 }
 
 function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride = null) {
@@ -1815,7 +1827,7 @@ async function sendMessage() {
   // 对话模式走流式路径
   if (getChatMode() === 'chat') {
     $promptInput.value = '';
-    $promptInput.style.height = 'auto';
+    $promptInput.style.height = '100%';
     const userRefs = [...refUrls];
     refUrls = [];
     renderRefTags();
@@ -1847,7 +1859,7 @@ async function sendMessage() {
 
   // 3. 清空输入
   $promptInput.value = '';
-  $promptInput.style.height = 'auto';
+  $promptInput.style.height = '100%';
   refUrls = [];
   renderRefTags();
 
@@ -3057,7 +3069,7 @@ function openGenUrl(btn) {
 }
 
 function autoResizeTextarea() {
-  // textarea 使用 flex: 1 自动填充，无需手动调整高度
+  $promptInput.style.height = '100%';
 }
 
 init();
