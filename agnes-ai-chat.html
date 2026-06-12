@@ -2298,7 +2298,7 @@ function buildBubbleContent(msg) {
         html += '</div>';
       }
       // 提示词文本
-      html += `<div class="msg-text" onclick="event.stopPropagation();startEditPrompt('${msg._convId}',${msg._idx})">${msg.text}</div>`;
+      html += `<div class="msg-text" ondblclick="event.stopPropagation();startEditPrompt('${msg._convId}',${msg._idx})">${msg.text}</div>`;
       // 请求体折叠（单独一行）
       if (msg.apiBodies?.requestBody) {
         const uid = codeId();
@@ -2383,7 +2383,7 @@ function buildBubbleContent(msg) {
   }
 
   if (isUser) {
-    html += `<div class="msg-text" onclick="event.stopPropagation();startEditPrompt('${msg._convId}',${msg._idx})">${msg.text}</div>`;
+    html += `<div class="msg-text" ondblclick="event.stopPropagation();startEditPrompt('${msg._convId}',${msg._idx})">${msg.text}</div>`;
   } else {
     html += `<div class="msg-text">${msg.text}</div>`;
   }
@@ -2603,6 +2603,7 @@ function startEditPrompt(convId, msgIdx) {
   const originalText = msg.text;
   textEl.classList.add('edit-inline');
   textEl.innerHTML = `<textarea id="editPromptTextarea" rows="4" onclick="event.stopPropagation()">${escapeHtml(originalText)}</textarea>`;
+  $inputArea.style.display = 'none';  // 编辑时隐藏输入区
 
   const ta = document.getElementById('editPromptTextarea');
   requestAnimationFrame(() => {
@@ -2640,6 +2641,7 @@ async function saveEditPrompt(convId, msgIdx) {
     if (bubble) { msg._convId = convId; msg._idx = msgIdx; bubble.innerHTML = buildBubbleContent(msg); }
   }
   renderConvList();
+  $inputArea.style.display = '';  // 恢复输入区
 }
 
 function cancelEditPrompt(convId, msgIdx, originalText) {
@@ -2651,6 +2653,7 @@ function cancelEditPrompt(convId, msgIdx, originalText) {
       textEl.innerHTML = originalText;
     }
   }
+  $inputArea.style.display = '';
 }
 
 async function copyUserPrompt(convId, msgIdx) {
