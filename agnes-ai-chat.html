@@ -240,6 +240,27 @@
   .chat-messages::-webkit-scrollbar-track { background: transparent; }
   .chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+  .scroll-btn {
+    position: absolute; z-index: 50;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: rgba(30, 42, 58, 0.75);
+    backdrop-filter: blur(4px);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+    transition: opacity var(--transition), background var(--transition);
+    opacity: 0;
+  }
+  .msg-wrapper:hover .scroll-btn,
+  .msg-wrapper:focus-within .scroll-btn { opacity: 1; }
+  .scroll-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+  .scroll-btn svg { width: 16px; height: 16px; }
+  .scroll-top-btn { top: 8px; right: 8px; }
+  .scroll-bottom-btn { bottom: 8px; right: 8px; }
+
   .welcome {
     display: flex; flex-direction: column; align-items: center;
     justify-content: center; height: 100%; text-align: center;
@@ -823,7 +844,15 @@
       <button id="btnFullscreen" title="全屏浏览" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:4px 8px;border-radius:4px;font-size:16px;transition:var(--transition);line-height:1;">&#x26F6;</button>
     </div>
   </div>
-  <div class="chat-messages" id="chatMessages"></div>
+  <div class="msg-wrapper" style="flex:1;position:relative;display:flex;flex-direction:column;min-height:0">
+    <div class="chat-messages" id="chatMessages"></div>
+    <button class="scroll-btn scroll-top-btn" id="btnScrollTop" title="滚动到顶部" onclick="scrollToTop()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+    </button>
+    <button class="scroll-btn scroll-bottom-btn" id="btnScrollBottom" title="滚动到底部" onclick="scrollToBottom()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+  </div>
   <div class="input-area" id="inputArea">
     <div class="drag-handle" id="dragHandle" title="拖拽调整高度">
       <svg viewBox="0 0 28 8" fill="currentColor">
@@ -1305,7 +1334,7 @@ async function init() {
   $sysText.value = localStorage.getItem('agnes_sys_text') || '';
   $sysImage.value = localStorage.getItem('agnes_sys_image') || '';
   $sysVideo.value = localStorage.getItem('agnes_sys_video') || '';
-  $sysOptimize.value = localStorage.getItem('agnes_sys_optimize') || 'SYSTEM：梳理优化提示词，将用户输入的晦涩难懂或乱七八糟的提示词梳理成条理清晰并富含细节的新提示词。\n-----SYSTEM#USER#SPLIT-----\n';
+  $sysOptimize.value = localStorage.getItem('agnes_sys_optimize') || 'SYSTEM：\n梳理优化提示词。\n分析用户提示词的用途（文本对话用途、生成图像用途、生成视频用途），根据用户提示词可能的用途，将用户输入的晦涩难懂、乱七八糟的提示词，梳理成条理清晰并富含细节的新提示词（根据用途）。\n1、只输出优化后的提示词，禁止输出你的思考过程等信息。\n2、生成的新提示词应控制长度，最多不得超过用户提示词的5倍，或最多不得超过4096个字符。\n3、生成的新提示词为了美观易读应进行格式化。';
   $chatTemp.value = localStorage.getItem('agnes_chat_temp') || '1';
   document.getElementById('chatTempVal').textContent = $chatTemp.value;
   $chatMaxTokens.value = localStorage.getItem('agnes_chat_max_tokens') || '8192';
@@ -2515,6 +2544,10 @@ function scrollToBottom() {
   setTimeout(() => {
     $chatMessages.scrollTop = $chatMessages.scrollHeight;
   }, 100);
+}
+
+function scrollToTop() {
+  $chatMessages.scrollTop = 0;
 }
 
 // ==================== Video Polling ====================
