@@ -2002,7 +2002,7 @@ async function sendMessage() {
 
   // 4. 调用 API 并原地更新占位消息
   try {
-    const result = await callAgnesAPI(prompt, userRefs);
+    const result = await callAgnesAPI(prompt, userRefs, reqBody);
     removePendingRequest(sourceConvId);
 
     // 找到占位 AI 消息（通过 _msg_pid）
@@ -2289,8 +2289,8 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
   }
 }
 
-async function callAgnesAPI(prompt, imageUrls) {
-  const body = buildRequestBody(prompt, imageUrls);
+async function callAgnesAPI(prompt, imageUrls, prebuiltBody = null) {
+  const body = prebuiltBody || buildRequestBody(prompt, imageUrls);
   const requestBodyStr = JSON.stringify(body, null, 2);
   const endpoint = getEndpoint();
   const resp = await fetch(endpoint, {
