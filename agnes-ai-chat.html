@@ -178,7 +178,16 @@
   .sidebar-group-title {
     font-size: 12px; font-weight: 600; color: var(--text-primary);
     margin: 0 0 0 0; padding: 4px 0;
+    cursor: pointer; user-select: none;
   }
+  .sidebar-group-title::before {
+    content: '▼ '; font-size: 10px;
+  }
+  .sidebar-group-title.collapsed::before {
+    content: '▶ '; font-size: 10px;
+  }
+  .group-body { overflow: hidden; transition: max-height 0.25s ease; max-height: 2000px; }
+  .group-body.collapsed { max-height: 0; padding: 0; }
   .sidebar input, .sidebar select {
     width: 100%; padding: 8px 10px;
     border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -705,19 +714,17 @@
     <span class="arrow" id="settingsArrow">&#9654;</span> 模型设置
   </div>
   <div class="settings-panel" id="settingsPanel">
+<div class="sidebar-group">
     <div class="sidebar-section">
-      <h3 class="sidebar-group-title">通用配置</h3>
+      <h3 class="sidebar-group-title" onclick="toggleGroup(this)">通用配置</h3>
     </div>
+    <div class="group-body">
     <div class="sidebar-section">
       <label class="sidebar-label">API Key</label>
       <div class="api-key-wrapper">
         <input type="password" id="apikey" placeholder="输入 Agnes API Key……"/>
         <button class="toggle-key" id="toggleKeyBtn" title="显示/隐藏">&#x1f441;</button>
       </div>
-    </div>
-    <div class="sidebar-section">
-      <label class="sidebar-label">随机种子（可选）</label>
-      <input type="number" id="seedInput" placeholder="留空则随机……"/>
     </div>
     <div class="sidebar-section">
       <label class="sidebar-label">文本系统提示词</label>
@@ -736,9 +743,13 @@
       <textarea id="sysOptimize" rows="2" placeholder="用于'优化提示词'功能的系统提示词……"></textarea>
     </div>
 
-    <div class="sidebar-section">
-      <h3 class="sidebar-group-title">生图配置</h3>
     </div>
+  </div>
+  <div class="sidebar-group">
+    <div class="sidebar-section">
+      <h3 class="sidebar-group-title" onclick="toggleGroup(this)">生图配置</h3>
+    </div>
+    <div class="group-body">
     <div class="sidebar-section">
       <label class="sidebar-label">模型</label>
       <select id="imageModel">
@@ -761,15 +772,27 @@
         <option value="2160x3840">2160 x 3840（4K竖版）</option>
       </select>
     </div>
-
     <div class="sidebar-section">
-      <h3 class="sidebar-group-title">生视频配置</h3>
+      <label class="sidebar-label">随机种子（可选）</label>
+      <input type="number" id="imageSeed" placeholder="留空则随机……"/>
     </div>
+
+    </div>
+  </div>
+  <div class="sidebar-group">
+    <div class="sidebar-section">
+      <h3 class="sidebar-group-title" onclick="toggleGroup(this)">生视频配置</h3>
+    </div>
+    <div class="group-body">
     <div class="sidebar-section">
       <label class="sidebar-label">模型</label>
       <select id="videoModel">
         <option value="agnes-video-v2.0">Agnes-Video-V2.0</option>
       </select>
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">随机种子（可选）</label>
+      <input type="number" id="seedInput" placeholder="留空则随机……"/>
     </div>
     <div class="sidebar-section">
       <label class="sidebar-label">视频分辨率</label>
@@ -810,10 +833,18 @@
         <option value="60">60 fps</option>
       </select>
     </div>
-
     <div class="sidebar-section">
-      <h3 class="sidebar-group-title">文本对话配置</h3>
+      <label class="sidebar-label">推理步数 (num_inference_steps)</label>
+      <input type="number" id="inferenceSteps" placeholder="留空则使用默认值……"/>
     </div>
+
+    </div>
+  </div>
+  <div class="sidebar-group">
+    <div class="sidebar-section">
+      <h3 class="sidebar-group-title" onclick="toggleGroup(this)">文本对话配置</h3>
+    </div>
+    <div class="group-body">
     <div class="sidebar-section">
       <label class="sidebar-label">模型</label>
       <select id="chatModel">
@@ -823,6 +854,10 @@
     <div class="sidebar-section">
       <label class="sidebar-label">温度: <span id="chatTempVal">1</span></label>
       <input type="range" id="chatTemp" min="0" max="2" step="0.1" value="1" />
+    </div>
+    <div class="sidebar-section">
+      <label class="sidebar-label">核采样 (Top_p): <span id="chatTopPVal">0.7</span></label>
+      <input type="range" id="chatTopP" min="0" max="1" step="0.05" value="0.7" />
     </div>
     <div class="sidebar-section">
       <label class="sidebar-label">最大 Token</label>
@@ -840,8 +875,11 @@
       </label>
     </div>
 
+    </div>
+  </div>
+  <div class="sidebar-group">
     <div class="sidebar-section">
-      <h3 class="sidebar-group-title">说明</h3>
+      <h3 class="sidebar-group-title" onclick="toggleGroup(this)">说明</h3>
     </div>
     <div class="sidebar-hint">API 免费，在
       <a href="https://platform.agnes-ai.com/" target="_blank">Agnes Platform</a> 获取 Key。
@@ -1019,6 +1057,7 @@ async function optimizePrompt() {
       model: $chatModel.value,
       messages: [{ role: 'user', content: fullPrompt }],
       temperature: parseFloat($chatTemp.value),
+      top_p: parseFloat($chatTopP.value),
       max_tokens: parseInt($chatMaxTokens.value),
       stream: false,
     };
@@ -1060,6 +1099,8 @@ let convPendingRequests = {};  // { convId: count } — pending 请求计数，0
 const $apikey       = document.getElementById('apikey');
 const $sizeSelect   = document.getElementById('sizeSelect');
 const $seedInput    = document.getElementById('seedInput');
+const $imageSeed    = document.getElementById('imageSeed');
+const $inferenceSteps = document.getElementById('inferenceSteps');
 const $imageModel   = document.getElementById('imageModel');
 const $videoModel   = document.getElementById('videoModel');
 const $videoRes     = document.getElementById('videoRes');
@@ -1085,6 +1126,7 @@ const $sysImage     = document.getElementById('sysImage');
 const $sysVideo     = document.getElementById('sysVideo');
 const $sysOptimize  = document.getElementById('sysOptimize');
 const $chatTemp     = document.getElementById('chatTemp');
+const $chatTopP     = document.getElementById('chatTopP');
 const $chatMaxTokens = document.getElementById('chatMaxTokens');
 const $chatThinking = document.getElementById('chatThinking');
 const $chatRounds   = document.getElementById('chatRounds');
@@ -1336,8 +1378,32 @@ function startHeaderRename() {
   });
 }
 
+// ==================== 侧边栏分组折叠 ====================
+function toggleGroup(titleEl) {
+  const group = titleEl.closest('.sidebar-group');
+  if (!group) return;
+  const body = group.querySelector('.group-body');
+  if (!body) return;
+  titleEl.classList.toggle('collapsed');
+  body.classList.toggle('collapsed');
+  const key = 'sidebar_group_' + titleEl.textContent.trim();
+  localStorage.setItem(key, body.classList.contains('collapsed') ? '1' : '');
+}
+// 初始化折叠状态
+function initSidebarGroups() {
+  document.querySelectorAll('.sidebar-group-title').forEach(el => {
+    const key = 'sidebar_group_' + el.textContent.trim();
+    if (localStorage.getItem(key) === '1') {
+      el.classList.add('collapsed');
+      const body = el.closest('.sidebar-group')?.querySelector('.group-body');
+      if (body) body.classList.add('collapsed');
+    }
+  });
+}
+
 // ==================== Init ====================
 async function init() {
+  initSidebarGroups();
   apiKey = localStorage.getItem('agnes_api_key') || '';
   $apikey.value = apiKey;
   updateStatus();
@@ -1350,6 +1416,8 @@ async function init() {
   document.getElementById('numFrames').value = localStorage.getItem('agnes_video_frames') || '121';
   document.getElementById('frameRate').value = localStorage.getItem('agnes_video_fps') || '24';
   $seedInput.value = localStorage.getItem('agnes_seed') || '1';
+  $imageSeed.value = localStorage.getItem('agnes_image_seed') || '';
+  $inferenceSteps.value = localStorage.getItem('agnes_inference_steps') || '';
   $chatModel.value = localStorage.getItem('agnes_chat_model') || 'agnes-2.0-flash';
   $sysText.value = localStorage.getItem('agnes_sys_text') || '';
   $sysImage.value = localStorage.getItem('agnes_sys_image') || '';
@@ -1357,6 +1425,8 @@ async function init() {
   $sysOptimize.value = localStorage.getItem('agnes_sys_optimize') || 'SYSTEM：\n梳理优化提示词。\n分析用户提示词的用途（文本对话用途、生成图像用途、生成视频用途），根据用户提示词可能的用途，将用户输入的晦涩难懂、乱七八糟的提示词，梳理成条理清晰并富含细节的新提示词（根据用途）。\n1、只输出优化后的提示词，禁止输出你的思考过程等信息。\n2、生成的新提示词应控制长度，最多不得超过用户提示词的5倍，或最多不得超过4096个字符。\n3、生成的新提示词为了美观易读应进行格式化。';
   $chatTemp.value = localStorage.getItem('agnes_chat_temp') || '1';
   document.getElementById('chatTempVal').textContent = $chatTemp.value;
+  $chatTopP.value = localStorage.getItem('agnes_chat_top_p') || '0.7';
+  document.getElementById('chatTopPVal').textContent = $chatTopP.value;
   $chatMaxTokens.value = localStorage.getItem('agnes_chat_max_tokens') || '8192';
   $chatThinking.checked = localStorage.getItem('agnes_chat_thinking') === 'true';
   $chatRounds.value = localStorage.getItem('agnes_chat_rounds') || '10';
@@ -1395,6 +1465,8 @@ async function init() {
   document.getElementById('numFrames').addEventListener('change', (e) => { localStorage.setItem('agnes_video_frames', e.target.value); });
   document.getElementById('frameRate').addEventListener('change', (e) => { localStorage.setItem('agnes_video_fps', e.target.value); });
   $seedInput.addEventListener('input', () => { localStorage.setItem('agnes_seed', $seedInput.value.trim()); });
+  $imageSeed.addEventListener('input', () => { localStorage.setItem('agnes_image_seed', $imageSeed.value.trim()); });
+  $inferenceSteps.addEventListener('input', () => { localStorage.setItem('agnes_inference_steps', $inferenceSteps.value.trim()); });
   $chatModel.addEventListener('change', () => { localStorage.setItem('agnes_chat_model', $chatModel.value); });
   $sysText.addEventListener('input', () => { localStorage.setItem('agnes_sys_text', $sysText.value); });
   $sysImage.addEventListener('input', () => { localStorage.setItem('agnes_sys_image', $sysImage.value); });
@@ -1403,6 +1475,10 @@ async function init() {
   $chatTemp.addEventListener('input', () => {
     localStorage.setItem('agnes_chat_temp', $chatTemp.value);
     document.getElementById('chatTempVal').textContent = $chatTemp.value;
+  });
+  $chatTopP.addEventListener('input', () => {
+    localStorage.setItem('agnes_chat_top_p', $chatTopP.value);
+    document.getElementById('chatTopPVal').textContent = $chatTopP.value;
   });
   $chatMaxTokens.addEventListener('input', () => { localStorage.setItem('agnes_chat_max_tokens', $chatMaxTokens.value); });
   $chatThinking.addEventListener('change', () => { localStorage.setItem('agnes_chat_thinking', $chatThinking.checked); });
@@ -1823,6 +1899,7 @@ function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride =
       model: $chatModel.value,
       messages: messages,
       temperature: parseFloat($chatTemp.value),
+      top_p: parseFloat($chatTopP.value),
       max_tokens: parseInt($chatMaxTokens.value),
       stream: true,
     };
@@ -1845,7 +1922,9 @@ function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride =
       frame_rate: parseInt(document.getElementById('frameRate').value),
     };
     const seedVal = $seedInput.value.trim();
-    if (seedVal) body.seed = parseInt(seedVal, 10);
+    body.seed = seedVal ? parseInt(seedVal, 10) : Math.floor(Math.random() * 65536) + 1;
+    const stepsVal = $inferenceSteps.value.trim();
+    if (stepsVal) body.num_inference_steps = parseInt(stepsVal, 10);
     if (imageUrls && imageUrls.length > 0) {
       if (imageUrls.length === 1) {
         body.image = imageUrls[0];
@@ -1860,8 +1939,8 @@ function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride =
   const fullPrompt = concatSysPrompt(getSysPromptFor('image'), prompt);
   const model = $imageModel.value;
   const body = { model, prompt: fullPrompt, size: $sizeSelect.value, extra_body: { response_format: 'url' } };
-  const seedVal = $seedInput.value.trim();
-  if (seedVal) body.seed = parseInt(seedVal, 10);
+  const seedVal = $imageSeed.value.trim();
+  body.seed = seedVal ? parseInt(seedVal, 10) : Math.floor(Math.random() * 65536) + 1;
   if (imageUrls && imageUrls.length > 0) {
     body.tags = ['img2img'];
     body.extra_body.image = imageUrls;
