@@ -291,11 +291,11 @@
   .avatar.ai-avatar { background: var(--bg-tertiary); }
 
   .bubble {
-    max-width: 99%; padding: 14px 18px; border-radius: var(--radius);
+    max-width: 99%; padding: 1rem; border-radius: 4px;
     position: relative; word-break: break-word;
   }
-  .bubble.user { background: var(--bg-bubble-user); border-bottom-right-radius: 4px; }
-  .bubble.ai { background: var(--bg-bubble-ai); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .bubble.user { background: var(--bg-secondary); border-top-right-radius: 32px; }
+  .bubble.ai { border: 1px solid var(--border); border-top-left-radius: 32px; }
   .bubble .msg-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
   .bubble .ref-images { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
   .bubble .ref-images img, .bubble .gen-image {
@@ -327,7 +327,7 @@
   }
   .chat-bubble-ai {
     margin-right: auto; margin-left: auto;
-    background: var(--bg-secondary); color: var(--text-primary);
+    color: var(--text-primary);
   }
   .stream-cursor {
     display: inline-block; animation: blink 1s step-end infinite;
@@ -477,6 +477,59 @@
     max-width: 480px; border-radius: var(--radius-sm); overflow: hidden; background: #000;
   }
   .video-player video { width: 100%; display: block; }
+
+  /* 广告块 */
+  .message-row.ad-message {
+    justify-content: center;
+    animation: fadeIn 0.3s ease;
+  }
+  .ad-bubble {
+    max-width: 99%;
+    padding: 12px 18px;
+    border-radius: var(--radius);
+    border: 1px dashed var(--border);
+    background: linear-gradient(135deg, rgba(232,168,56,0.06), rgba(78,168,222,0.06));
+    position: relative;
+  }
+  .ad-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ad-title {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+    opacity: 0.7;
+  }
+  .ad-close-btn {
+    font-size: 11px;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+    width: 26px; height: 26px; line-height: 26px;
+    text-align: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    opacity: 0.6;
+  }
+  .ad-close-btn:hover {
+    opacity: 1;
+    color: var(--text-primary);
+  }
+  .ad-content {}
+  .ad-placeholder {
+    text-align: center; padding: 16px 0;
+  }
+  .ad-placeholder p {
+    color: var(--text-muted); font-size: 14px; margin: 4px 0;
+  }
 
   /* Input */
   .input-area {
@@ -667,6 +720,7 @@
     .bubble .ref-images img { max-width: 100px; max-height: 70px; }
     .bubble .gen-image { max-width: 240px; max-height: 240px; }
     .btn-send { width: 40px; height: 40px; }
+    .ad-bubble { max-width: 90%; padding: 10px 12px; }
   }
 </style>
 <!-- Marked.js for Markdown rendering -->
@@ -1034,6 +1088,7 @@ const CONFIG = {
 
 let conversations = [];      // [{ id, name, messages, createdAt, updatedAt }]
 let currentConvId = null;
+let globalAdRoundCounter = 0;  // Session 级广告轮次计数器（不持久化）
 let apiKey = '';
 const DEFAULT_API_KEY = '';
 
@@ -2007,6 +2062,7 @@ async function sendMessage() {
   // 1. 创建 user 消息（图像/视频模式只存用户输入部分，不含系统提示词）
   const displayPrompt = getChatMode() === 'chat' ? prompt : extractUserPrompt(prompt);
   await addMessageToConv(sourceConvId, 'user', displayPrompt, false, userRefs, [], { requestBody: reqBodyStr, _endpoint: getEndpoint() });
+  globalAdRoundCounter++;  // 广告轮次计数
 
   const conv = conversations.find(c => c.id === sourceConvId);
   const msgPid = conv ? conv.messages[conv.messages.length - 1]._msg_id : null;
@@ -2014,6 +2070,10 @@ async function sendMessage() {
   // 2. 立即创建 AI 占位消息（紧跟在 user 消息后面）
   const isVideo = getChatMode() === 'video';
   await addMessageToConv(sourceConvId, 'ai', isVideo ? '\u23f3 正在创建视频任务…' : '\u23f3 正在生成…', false, [], [], { _endpoint: getEndpoint(), _msg_pid: msgPid });
+  // 广告：每3轮插入（AI占位消息后立即插入，不等待响应）
+  if (globalAdRoundCounter > 0 && globalAdRoundCounter % 3 === 0) {
+    insertAdBlock();
+  }
   scrollToBottom();
 
   // 3. 清空输入
@@ -2143,10 +2203,15 @@ async function sendChatMessage(prompt, imageUrls = []) {
 
   // 追加 user 消息并持久化（refImages 用于UI渲染缩略图）
   await addMessageToConv(sourceConvId, 'user', prompt, false, imageUrls, [], { requestBody: reqBodyStr, _endpoint: endpoint });
+  globalAdRoundCounter++;  // 广告轮次计数
   const msgPid = conv.messages[conv.messages.length - 1]._msg_id;
 
   const streamId = 'stream_' + Date.now();
   await addMessageToConv(sourceConvId, 'ai', '', false, [], [], { _endpoint: endpoint, _msg_pid: msgPid, _streamId: streamId, _streaming: true });
+  // 广告：每3轮插入（AI占位消息后立即插入，不等待响应）
+  if (globalAdRoundCounter > 0 && globalAdRoundCounter % 3 === 0) {
+    insertAdBlock();
+  }
 
   scrollToBottom();
 
@@ -2446,8 +2511,8 @@ function buildBubbleContent(msg) {
       html += '<div class="msg-compact-bar">';
       html += `<span class="msg-time">${formatTime(new Date(msg.time))}</span>`;
       html += '<div class="msg-actions" style="margin-top:0;">';
-      html += `<button class="btn-act" title="复制图片/视频URL" onclick="event.stopPropagation();copyGenUrl(this)">&#x1f4cb;</button>`;
-      html += `<button class="btn-act" title="在新窗口单独打开" onclick="event.stopPropagation();openGenUrl(this)">&#x1f517;</button>`;
+      html += `<button class="btn-act" title="复制图片/视频URL" onclick="event.stopPropagation();copyGenUrl(this)">&#x1f517;</button>`;
+      html += `<button class="btn-act" title="在新窗口单独打开" onclick="event.stopPropagation();openGenUrl(this)">&#x2197;</button>`;
       html += `<button class="btn-act" title="重新生成" onclick="event.stopPropagation();regenerateFromUser('${msg._convId}',${msg._idx})">&#x1f504;</button>`;
       html += '</div>';
       html += '</div>';
@@ -2624,8 +2689,8 @@ function buildBubbleContent(msg) {
     html += '<div class="msg-compact-bar">';
     html += `<span class="msg-time">${formatTime(t)}</span>`;
     html += '<div class="msg-actions" style="margin-top:0;">';
-    html += `<button class="btn-act" title="复制图片/视频URL" onclick="event.stopPropagation();copyGenUrl(this)">&#x1f4cb;</button>`;
-    html += `<button class="btn-act" title="在新窗口单独打开" onclick="event.stopPropagation();openGenUrl(this)">&#x1f517;</button>`;
+    html += `<button class="btn-act" title="复制图片/视频URL" onclick="event.stopPropagation();copyGenUrl(this)">&#x1f517;</button>`;
+    html += `<button class="btn-act" title="在新窗口单独打开" onclick="event.stopPropagation();openGenUrl(this)">&#x2197;</button>`;
     html += '</div>';
     html += '</div>';
   }
@@ -2736,6 +2801,62 @@ function scrollToBottom() {
 
 function scrollToTop() {
   $chatMessages.scrollTop = 0;
+}
+
+// ==================== 广告块 ====================
+function getAdContent() {
+  // 广告内容源 — 后续可替换为外部广告
+  return `
+    <div class="ad-placeholder">
+      <p>广告位招商</p>
+      <p style="font-size:11px;opacity:0.5;">联系：yanshn@foxmail.com</p>
+    </div>`;
+}
+
+function insertAdBlock() {
+  const adRow = document.createElement('div');
+  adRow.className = 'message-row ad-message';
+
+  let secLeft = 10;
+  const timerId = 'adTimer_' + Date.now();
+
+  adRow.innerHTML = `
+    <div class="ad-bubble">
+      <div class="ad-header">
+        <span class="ad-title">此为广告，请君鉴别，切勿轻信！</span>
+        <button class="ad-close-btn" data-ad-timer="${timerId}">${secLeft}s</button>
+      </div>
+      <div class="ad-content">
+        ${getAdContent()}
+      </div>
+    </div>`;
+
+  $chatMessages.appendChild(adRow);
+  scrollToBottom();
+
+  const btn = adRow.querySelector('.ad-close-btn');
+  let countdownTimer;
+
+  const startCountdown = () => {
+    countdownTimer = setInterval(() => {
+      secLeft--;
+      if (secLeft <= 0) {
+        clearInterval(countdownTimer);
+        btn.textContent = '\u2715';
+        btn.style.color = 'var(--error)';
+        btn.style.fontWeight = 'bold';
+      } else {
+        btn.textContent = secLeft + 's';
+      }
+    }, 1000);
+  };
+
+  btn.onclick = () => {
+    if (countdownTimer) clearInterval(countdownTimer);
+    adRow.remove();
+  };
+
+  startCountdown();
 }
 
 // ==================== Video Polling ====================
