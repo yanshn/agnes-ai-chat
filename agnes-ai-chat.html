@@ -1889,6 +1889,19 @@ function extractUserPrompt(text) {
   return idx >= 0 ? text.substring(idx + 30) : text;
 }
 
+// 从原始用户提示词中提取负向提示词文本，并返回清理后的主 prompt
+// 负向提示词标记：#负向提示词 或 #反向提示词，提取直到下一个空行或结尾
+function extractNegativePrompt(rawPrompt) {
+  if (!rawPrompt) return { mainPrompt: '', negativePrompt: '' };
+  const negRegex = /#\s*(负向提示词|反向提示词)\s*\n([\s\S]*?)(?=\n\n|$)/;
+  const match = rawPrompt.match(negRegex);
+  if (!match) return { mainPrompt: rawPrompt, negativePrompt: '' };
+  return {
+    mainPrompt: rawPrompt.replace(match[0], '').trim(),
+    negativePrompt: match[2].trim()
+  };
+}
+
 function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride = null) {
   const cMode = modeOverride || getChatMode();
 
@@ -1911,7 +1924,13 @@ function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride =
 
   if (cMode === 'video') {
     // 视频请求体
-    const fullPrompt = concatSysPrompt(getSysPromptFor('video'), prompt);
+    // 1. 检测并去除关键帧标记（#关键帧 或 #关键帧模式）
+    const hasKeyframe = /#\s*关键帧(模式)?/.test(prompt);
+    let apiPrompt = hasKeyframe ? prompt.replace(/#\s*关键帧(模式)?\s*/g, '').trim() : prompt;
+    // 2. 提取负向提示词（从中去掉 #负向提示词/#反向提示词 及提取的内容）
+    const { mainPrompt, negativePrompt: negPromptVal } = extractNegativePrompt(apiPrompt);
+    // 3. 用清理后的 prompt 拼接系统提示词
+    const fullPrompt = concatSysPrompt(getSysPromptFor('video'), mainPrompt);
     const model = $videoModel.value;
     const res = $videoRes.value.split('x');
     const body = {
@@ -1925,12 +1944,24 @@ function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride =
     body.seed = seedVal ? parseInt(seedVal, 10) : Math.floor(Math.random() * 65536) + 1;
     const stepsVal = $inferenceSteps.value.trim();
     if (stepsVal) body.num_inference_steps = parseInt(stepsVal, 10);
+    // 4. 收集 extra_body 字段（避免覆盖）
+    let extraBody = {};
     if (imageUrls && imageUrls.length > 0) {
       if (imageUrls.length === 1) {
         body.image = imageUrls[0];
       } else {
-        body.extra_body = { image: imageUrls };
+        extraBody.image = imageUrls;
       }
+    }
+    if (hasKeyframe) {
+      extraBody.mode = 'keyframes';
+    }
+    if (Object.keys(extraBody).length > 0) {
+      body.extra_body = extraBody;
+    }
+    // 5. 负向提示词
+    if (negPromptVal) {
+      body.negative_prompt = negPromptVal;
     }
     return body;
   }
@@ -2983,10 +3014,26 @@ async function regenerateFromUser(convId, msgIdx) {
       reqParams = JSON.parse(userMsg.apiBodies.requestBody);
     }
   } catch (e) { /* 忽略解析错误 */ }
-  reqParams.prompt = userMsg.text;
+  // 解析控制指令：#关键帧/#关键帧模式 检测并去除 + #负向提示词/#反向提示词 提取
+  const hasKeyframe = /#\s*关键帧(模式)?/.test(userMsg.text);
+  const textForApi = hasKeyframe ? userMsg.text.replace(/#\s*关键帧(模式)?\s*/g, '').trim() : userMsg.text;
+  const { mainPrompt: promptForApi, negativePrompt: negPromptVal } = extractNegativePrompt(textForApi);
   // 重新拼接当前窗口的系统提示词（避免使用历史记录中的旧版本）
   const sysKey = roundMode === 'video' ? 'video' : 'image';
-  reqParams.prompt = concatSysPrompt(getSysPromptFor(sysKey), userMsg.text);
+  reqParams.prompt = concatSysPrompt(getSysPromptFor(sysKey), promptForApi);
+  // 更新关键帧模式
+  if (hasKeyframe) {
+    if (!reqParams.extra_body) reqParams.extra_body = {};
+    reqParams.extra_body.mode = 'keyframes';
+  } else {
+    if (reqParams.extra_body) delete reqParams.extra_body.mode;
+  }
+  // 更新负向提示词
+  if (negPromptVal && roundMode === 'video') {
+    reqParams.negative_prompt = negPromptVal;
+  } else {
+    delete reqParams.negative_prompt;
+  }
 
   addPendingRequest(convId);
 
