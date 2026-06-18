@@ -2071,7 +2071,7 @@ async function sendMessage() {
   const isVideo = getChatMode() === 'video';
   await addMessageToConv(sourceConvId, 'ai', isVideo ? '\u23f3 正在创建视频任务…' : '\u23f3 正在生成…', false, [], [], { _endpoint: getEndpoint(), _msg_pid: msgPid });
   // 广告：每3轮插入（AI占位消息后立即插入，不等待响应）
-  if (globalAdRoundCounter > 0 && globalAdRoundCounter % 3 === 0) {
+  if (globalAdRoundCounter > 0 && globalAdRoundCounter % 5 === 0) {
     insertAdBlock();
   }
   scrollToBottom();
@@ -2209,7 +2209,7 @@ async function sendChatMessage(prompt, imageUrls = []) {
   const streamId = 'stream_' + Date.now();
   await addMessageToConv(sourceConvId, 'ai', '', false, [], [], { _endpoint: endpoint, _msg_pid: msgPid, _streamId: streamId, _streaming: true });
   // 广告：每3轮插入（AI占位消息后立即插入，不等待响应）
-  if (globalAdRoundCounter > 0 && globalAdRoundCounter % 3 === 0) {
+  if (globalAdRoundCounter > 0 && globalAdRoundCounter % 5 === 0) {
     insertAdBlock();
   }
 
