@@ -205,14 +205,7 @@
     outline: none; transition: border var(--transition);
   }
   .sidebar textarea::placeholder { color: var(--text-muted); }
-  .api-key-wrapper { position: relative; }
-  .api-key-wrapper input { padding-right: 38px; }
-  .toggle-key {
-    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
-    background: none; border: none; color: var(--text-muted);
-    cursor: pointer; padding: 4px; font-size: 13px;
-  }
-  .toggle-key:hover { color: var(--accent); }
+  .api-key-wrapper input { width: 100%; }
 
   .sidebar-hint {
     font-size: 10px; color: var(--text-muted); line-height: 1.5;
@@ -313,6 +306,7 @@
     font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;
   }
   .bubble .msg-time { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
+  .retry-count { font-size: 10px; color: #e8a838; margin-left: 6px; }
 
   /* Chat bubbles */
   .chat-bubble {
@@ -776,8 +770,7 @@
     <div class="sidebar-section">
       <label class="sidebar-label">API Key</label>
       <div class="api-key-wrapper">
-        <input type="password" id="apikey" placeholder="输入 Agnes API Key……"/>
-        <button class="toggle-key" id="toggleKeyBtn" title="显示/隐藏">&#x1f441;</button>
+        <input type="text" id="apikey" placeholder="输入 Agnes API Key（多个用逗号分隔）……"/>
       </div>
     </div>
     <div class="sidebar-section">
@@ -1089,11 +1082,15 @@ const CONFIG = {
 let conversations = [];      // [{ id, name, messages, createdAt, updatedAt }]
 let currentConvId = null;
 let globalAdRoundCounter = 0;  // Session 级广告轮次计数器（不持久化）
-let apiKey = '';
-const DEFAULT_API_KEY = '';
+let apiKey = '';             // 原始输入（逗号分隔字符串）
+let apiKeys = [];            // 解析后的 Key 数组（去空白、去空项）
+let apiKeyIndex = 0;         // 轮询分配游标
 
 function getApiKey() {
-  return apiKey || DEFAULT_API_KEY;
+  if (apiKeys.length === 0) return apiKey || '';  // 兼容旧格式
+  const key = apiKeys[apiKeyIndex % apiKeys.length];
+  apiKeyIndex++;
+  return key;
 }
 
 async function optimizePrompt() {
@@ -1461,6 +1458,7 @@ async function init() {
   initSidebarGroups();
   apiKey = localStorage.getItem('agnes_api_key') || '';
   $apikey.value = apiKey;
+  apiKeys = apiKey ? apiKey.split(',').map(k => k.trim()).filter(k => k.length > 0) : [];
   updateStatus();
 
   // 恢复所有设置项
@@ -1506,10 +1504,9 @@ async function init() {
   $apikey.addEventListener('input', () => {
     apiKey = $apikey.value.trim();
     localStorage.setItem('agnes_api_key', apiKey);
+    // 解析多个 API Key（逗号分隔，去空白，去空项）
+    apiKeys = apiKey ? apiKey.split(',').map(k => k.trim()).filter(k => k.length > 0) : [];
     updateStatus();
-  });
-  document.getElementById('toggleKeyBtn').addEventListener('click', () => {
-    $apikey.type = $apikey.type === 'password' ? 'text' : 'password';
   });
 
   // 设置变更 → 存 localStorage
@@ -1846,7 +1843,7 @@ function getConvState(convId) {
 }
 
 function updateStatus() {
-  if (!apiKey) {
+  if (apiKeys.length === 0) {
     $statusDot.className = 'status-dot offline';
     $statusText.textContent = '请设置 API Key';
     return;
@@ -1863,7 +1860,7 @@ function updateStatus() {
       break;
     default:
       $statusDot.className = 'status-dot';
-      $statusText.textContent = '就绪';
+      $statusText.textContent = apiKeys.length > 1 ? `就绪（${apiKeys.length} 个 Key）` : '就绪';
   }
 }
 
@@ -2028,7 +2025,6 @@ function buildRequestBody(prompt, imageUrls, stopIdx = undefined, modeOverride =
   const seedVal = $imageSeed.value.trim();
   body.seed = seedVal ? parseInt(seedVal, 10) : Math.floor(Math.random() * 65536) + 1;
   if (imageUrls && imageUrls.length > 0) {
-    body.tags = ['img2img'];
     body.extra_body.image = imageUrls;
   }
   return body;
@@ -2091,9 +2087,41 @@ async function sendMessage() {
     renderConvList();
   }
 
-  // 4. 调用 API 并原地更新占位消息
+  // 4. 调用 API 并原地更新占位消息（带自动重试）
+  let retryCount = 0;
+  const maxRetries = 5;
+  let result;
   try {
-    const result = await callAgnesAPI(prompt, userRefs, reqBody);
+    while (true) {
+      try {
+        result = await callAgnesAPI(prompt, userRefs, reqBody);
+        break;
+      } catch (err) {
+        if (err.status === 401 || err.name === 'AbortError' || retryCount >= maxRetries) {
+          err._autoRetryCount = retryCount;
+          throw err;
+        }
+        retryCount++;
+        // 更新 AI 消息显示重试状态
+        const convNow = conversations.find(c => c.id === sourceConvId);
+        const aMsg = convNow?.messages.find(m => m._msg_pid === msgPid);
+        if (aMsg) {
+          aMsg.apiBodies = { _autoRetryCount: retryCount, _endpoint: getEndpoint(), _lastError: err.message };
+          aMsg.text = `\u23f3 正在重试（${retryCount}/${maxRetries}）…\n\u274c 错误：${err.message}`;
+          aMsg.time = new Date().toISOString();
+          await dbPut(convNow);
+          if (sourceConvId === currentConvId) {
+            const aiIdx = convNow.messages.indexOf(aMsg);
+            const row = $chatMessages.querySelector(`[data-msg-idx="${aiIdx}"]`);
+            if (row) {
+              const bubble = row.querySelector('.bubble');
+              if (bubble) { aMsg._convId = currentConvId; aMsg._idx = aiIdx; bubble.innerHTML = buildBubbleContent(aMsg); }
+            }
+          }
+        }
+        await new Promise(r => setTimeout(r, (1 + retryCount) * 1000));
+      }
+    }
     removePendingRequest(sourceConvId);
 
     // 找到占位 AI 消息（通过 _msg_pid）
@@ -2107,6 +2135,7 @@ async function sendMessage() {
       responseBody: result.responseBody,
       _endpoint: getEndpoint(),
     };
+    if (retryCount > 0) aiMsg.apiBodies._autoRetryCount = retryCount;
     aiMsg.time = new Date().toISOString();
     aiMsg.isError = false;
 
@@ -2167,6 +2196,7 @@ async function sendMessage() {
     aiMsg.text = `\u274c 生成失败：${escapeHtml(errMsg)}`;
     aiMsg.isError = true;
     aiMsg.apiBodies = { requestBody: err.requestBody || '', responseBody: err.responseBody || escapeHtml(errMsg), _endpoint: getEndpoint() };
+    if (err._autoRetryCount > 0) aiMsg.apiBodies._autoRetryCount = err._autoRetryCount;
     aiMsg.time = new Date().toISOString();
 
     convNow.updatedAt = Date.now();
@@ -2223,45 +2253,108 @@ async function streamChatResponse(msgPid, streamId, sourceConvId, endpoint, reqB
   const conv = conversations.find(c => c.id === sourceConvId);
   if (!conv) return;
 
-  currentAbortController = new AbortController();
-
+  let retryCount = 0;
+  const maxRetries = 5;
   let response;
-  try {
-    response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getApiKey()}` },
-      body: JSON.stringify(reqBody),
-      signal: currentAbortController.signal,
-    });
-  } catch (err) {
-    removePendingRequest(sourceConvId);
-    currentAbortController = null;
-    if (err.name === 'AbortError') {
+
+  while (true) {
+    currentAbortController = new AbortController();
+
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getApiKey()}` },
+        body: JSON.stringify(reqBody),
+        signal: currentAbortController.signal,
+      });
+    } catch (err) {
+      removePendingRequest(sourceConvId);
+      currentAbortController = null;
+      if (err.name === 'AbortError') {
+        const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
+        if (aiMsg) { aiMsg.apiBodies._streaming = false; aiMsg.apiBodies._incomplete = true; await dbPut(conv); }
+        return;
+      }
+      // 网络错误 — 可重试
+      retryCount++;
+      if (retryCount > maxRetries) {
+        const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
+        if (aiMsg) {
+          aiMsg.apiBodies._autoRetryCount = retryCount - 1;
+          aiMsg.text = '网络连接失败，请检查网络后重试'; aiMsg.isError = true; aiMsg.apiBodies._streaming = false; await dbPut(conv); updateMessageNode(conv.messages.indexOf(aiMsg));
+        }
+        return;
+      }
+      // 更新重试状态
       const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
-      if (aiMsg) { aiMsg.apiBodies._streaming = false; aiMsg.apiBodies._incomplete = true; await dbPut(conv); }
-    } else {
-      const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
-      if (aiMsg) { aiMsg.text = '网络连接失败，请检查网络后重试'; aiMsg.isError = true; aiMsg.apiBodies._streaming = false; await dbPut(conv); updateMessageNode(conv.messages.indexOf(aiMsg)); }
+      if (aiMsg) {
+        aiMsg.apiBodies._autoRetryCount = retryCount;
+        aiMsg.apiBodies._lastError = err.message;
+        aiMsg.text = `\u23f3 正在重试（${retryCount}/${maxRetries}）…\n\u274c 错误：${err.message}`;
+        await dbPut(conv);
+        updateMessageNode(conv.messages.indexOf(aiMsg));
+      }
+      await new Promise(r => setTimeout(r, (1 + retryCount) * 1000));
+      continue;
     }
-    return;
+
+    if (!response.ok) {
+      const status = response.status;
+      if (status === 401) {
+        removePendingRequest(sourceConvId);
+        currentAbortController = null;
+        const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
+        if (aiMsg) {
+          aiMsg.apiBodies._streaming = false;
+          aiMsg.isError = true;
+          aiMsg.text = 'API Key 无效，请检查配置';
+          await dbPut(conv); updateMessageNode(conv.messages.indexOf(aiMsg));
+        }
+        return;
+      }
+      // HTTP 错误（429/5xx等）— 可重试
+      retryCount++;
+      if (retryCount > maxRetries) {
+        removePendingRequest(sourceConvId);
+        currentAbortController = null;
+        const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
+        if (aiMsg) {
+          aiMsg.apiBodies._autoRetryCount = retryCount - 1;
+          aiMsg.apiBodies._streaming = false;
+          aiMsg.isError = true;
+          if (status === 429) aiMsg.text = '请求过于频繁，请稍后重试';
+          else if (status >= 500) aiMsg.text = `服务暂时不可用 (HTTP ${status})，请稍后重试`;
+          else aiMsg.text = `请求失败 (HTTP ${status})`;
+          await dbPut(conv); updateMessageNode(conv.messages.indexOf(aiMsg));
+        }
+        return;
+      }
+      const httpErrMsg = status === 429 ? '请求过于频繁' : status >= 500 ? '服务暂时不可用' : '请求失败';
+      const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
+      if (aiMsg) {
+        aiMsg.apiBodies._autoRetryCount = retryCount;
+        aiMsg.apiBodies._lastError = `HTTP ${status}`;
+        aiMsg.text = `\u23f3 正在重试（${retryCount}/${maxRetries}）…\n\u274c 错误：${httpErrMsg} (HTTP ${status})`;
+        await dbPut(conv);
+        updateMessageNode(conv.messages.indexOf(aiMsg));
+      }
+      await new Promise(r => setTimeout(r, (1 + retryCount) * 1000));
+      continue;
+    }
+
+    break; // 请求成功，退出重试循环
   }
 
-  if (!response.ok) {
-    removePendingRequest(sourceConvId);
-    currentAbortController = null;
+  // 请求成功，记录重试次数
+  removePendingRequest(sourceConvId);
+  if (retryCount > 0) {
     const aiMsg = conv.messages.find(m => m._msg_pid === msgPid);
     if (aiMsg) {
-      const status = response.status;
-      aiMsg.apiBodies._streaming = false;
-      aiMsg.isError = true;
-      if (status === 401) aiMsg.text = 'API Key 无效，请检查配置';
-      else if (status === 429) aiMsg.text = '请求过于频繁，请稍后重试';
-      else if (status >= 500) aiMsg.text = `服务暂时不可用 (HTTP ${status})，请稍后重试`;
-      else aiMsg.text = `请求失败 (HTTP ${status})`;
-      await dbPut(conv); updateMessageNode(conv.messages.indexOf(aiMsg));
+      aiMsg.apiBodies._autoRetryCount = retryCount;
+      await dbPut(conv);
     }
-    return;
   }
+  currentAbortController = null;
 
   // SSE 流式读取
   const reader = response.body.getReader();
@@ -2510,6 +2603,7 @@ function buildBubbleContent(msg) {
       // 紧凑信息行：时间靠左，按钮靠右
       html += '<div class="msg-compact-bar">';
       html += `<span class="msg-time">${formatTime(new Date(msg.time))}</span>`;
+      html += (msg.apiBodies?._autoRetryCount ? `<span class="retry-count">已重试 ${msg.apiBodies._autoRetryCount} 次</span>` : '');
       html += '<div class="msg-actions" style="margin-top:0;">';
       html += `<button class="btn-act" title="复制图片/视频URL" onclick="event.stopPropagation();copyGenUrl(this)">&#x1f517;</button>`;
       html += `<button class="btn-act" title="在新窗口单独打开" onclick="event.stopPropagation();openGenUrl(this)">&#x2197;</button>`;
@@ -2595,6 +2689,7 @@ function buildBubbleContent(msg) {
     const charCount = (msg.text || '').length;
     html += `<div class="msg-meta" style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;padding:0 12px;">`;
     html += `<span class="msg-time">${formatTime(new Date(msg.time))}</span>`;
+    html += (msg.apiBodies?._autoRetryCount ? `<span class="retry-count">已重试 ${msg.apiBodies._autoRetryCount} 次</span>` : '');
     html += '<span style="display:flex;align-items:center;gap:6px;">';
     if (charCount > 0) {
       html += `<span style="font-size:11px;color:var(--text-muted);">(${charCount}字)</span>`;
@@ -2688,6 +2783,7 @@ function buildBubbleContent(msg) {
     const t = new Date(msg.time);
     html += '<div class="msg-compact-bar">';
     html += `<span class="msg-time">${formatTime(t)}</span>`;
+    html += (msg.apiBodies?._autoRetryCount ? `<span class="retry-count">已重试 ${msg.apiBodies._autoRetryCount} 次</span>` : '');
     html += '<div class="msg-actions" style="margin-top:0;">';
     html += `<button class="btn-act" title="复制图片/视频URL" onclick="event.stopPropagation();copyGenUrl(this)">&#x1f517;</button>`;
     html += `<button class="btn-act" title="在新窗口单独打开" onclick="event.stopPropagation();openGenUrl(this)">&#x2197;</button>`;
@@ -3210,17 +3306,58 @@ async function regenerateFromUser(convId, msgIdx) {
   }
   renderConvList();
 
-  // ═══ 阶段2：调用 API ═══
+  // ═══ 阶段2：调用 API（带自动重试）═══
+  let retryCount = 0;
+  const maxRetries = 5;
+  let data, endpoint, reqBodyStr, respStr;
   try {
-    const endpoint = isVideo ? CONFIG.videoEndpoint : CONFIG.imageEndpoint;
-    const reqBodyStr = JSON.stringify(reqParams, null, 2);
-    const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getApiKey()}` },
-      body: reqBodyStr,
-    });
-    const data = await resp.json();
-    const respStr = JSON.stringify(data, null, 2);
+    while (true) {
+      try {
+        endpoint = isVideo ? CONFIG.videoEndpoint : CONFIG.imageEndpoint;
+        reqBodyStr = JSON.stringify(reqParams, null, 2);
+        const resp = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getApiKey()}` },
+          body: reqBodyStr,
+        });
+        let jsonData;
+        try { jsonData = await resp.json(); } catch { jsonData = {}; }
+        if (!resp.ok) {
+          if (resp.status === 401) {
+            const err = new Error(jsonData?.detail || jsonData?.error?.message || `HTTP ${resp.status}`);
+            err.status = 401;
+            throw err;
+          }
+          throw new Error(jsonData?.detail || jsonData?.error?.message || `HTTP ${resp.status}`);
+        }
+        data = jsonData;
+        respStr = JSON.stringify(data, null, 2);
+        break;
+      } catch (err) {
+        if (err.status === 401 || err.name === 'AbortError' || retryCount >= maxRetries) {
+          err._autoRetryCount = retryCount;
+          throw err;
+        }
+        retryCount++;
+        // 更新 AI 消息显示重试状态
+        aiMsg = conv.messages.find(m => m._msg_pid === userMsg._msg_id);
+        if (aiMsg) {
+          aiMsg.apiBodies = { _autoRetryCount: retryCount, _endpoint: endpoint || getEndpoint(), _lastError: err.message };
+          aiMsg.text = `\u23f3 正在重试（${retryCount}/${maxRetries}）…\n\u274c 错误：${err.message}`;
+          aiMsg.time = new Date().toISOString();
+          await dbPut(conv);
+          if (convId === currentConvId) {
+            const aiIdx = conv.messages.indexOf(aiMsg);
+            const row = $chatMessages.querySelector(`[data-msg-idx="${aiIdx}"]`);
+            if (row) {
+              const bubble = row.querySelector('.bubble');
+              if (bubble) { aiMsg._convId = currentConvId; aiMsg._idx = aiIdx; bubble.innerHTML = buildBubbleContent(aiMsg); }
+            }
+          }
+        }
+        await new Promise(r => setTimeout(r, (1 + retryCount) * 1000));
+      }
+    }
 
     // 重新获取 aiMsg（可能在 async 间隙中因索引变化而失联）
     aiMsg = conv.messages.find(m => m._msg_pid === userMsg._msg_id);
@@ -3234,6 +3371,7 @@ async function regenerateFromUser(convId, msgIdx) {
       responseBody: respStr,
       _endpoint: endpoint,
     };
+    if (retryCount > 0) aiMsg.apiBodies._autoRetryCount = retryCount;
     aiMsg.isError = false;
     aiMsg.genImages = [];
     aiMsg.time = new Date().toISOString();
@@ -3247,7 +3385,7 @@ async function regenerateFromUser(convId, msgIdx) {
         aiMsg.apiBodies.videoId = videoId || taskId;
         aiMsg.apiBodies.videoStatus = 'queued';
         aiMsg.apiBodies.videoProgress = 0;
-        // 30 秒后自动轮询
+        // 10 秒后自动轮询
         if (convId === currentConvId) {
           const idx = conv.messages.indexOf(aiMsg);
           aiMsg.apiBodies._autoTimer = setTimeout(() => {
@@ -3294,6 +3432,10 @@ async function regenerateFromUser(convId, msgIdx) {
       aiMsg.text = '\u274c 重新生成失败：' + (err.message || '未知错误');
       aiMsg.isError = true;
       aiMsg.genImages = [];
+      if (err._autoRetryCount > 0) {
+        aiMsg.apiBodies = aiMsg.apiBodies || {};
+        aiMsg.apiBodies._autoRetryCount = err._autoRetryCount;
+      }
       aiMsg.time = new Date().toISOString();
       conv.updatedAt = Date.now();
       await dbPut(conv);

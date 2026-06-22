@@ -1,705 +1,570 @@
-# Agnes AI Chat - 对话模式功能设计文档
-
-## 概述
-
-在现有生图、生视频两种模式基础上，新增 AI 对话文字模式，支持流式输出、多轮对话、深度思考、工具调用等能力。
-
-对接 **Agnes-2.0-Flash** 对话模型：
-- API 文档：https://agnes-ai.com/doc/agnes-20-flash
-- Endpoint: `POST https://apihub.agnes-ai.com/v1/chat/completions`
-- Auth: `Authorization: Bearer YOUR_API_KEY`
-- Context Window: 256K
-- Max Output: 65.5K
+# Agnes AI Chat（智虾绘坊）—— 详细设计文档
 
 ---
 
-## 一、模式架构
+## 一、应用概述
 
-### 1.1 三模式切换
+**应用名称**：智虾绘坊（Agnes AI Chat）
 
-```
-🎨 图片  → 生图 API（/v1/image/generations）
-🎬 视频  → 生视频 API（/v1/video/generations）
-💬 对话  → 对话 API（/v1/chat/completions）[新增]
-```
+**应用形态**：单文件 HTML 应用，无需构建工具，直接用浏览器打开即可使用。
 
-- Chat 模式按钮从"图片/视频"二选一扩展为"图片/视频/对话"三选一
-- 每个对话独立记忆 chatMode (`conv.chatMode`)
-- 选择「对话」模式后自动加载对话配置
+**核心能力**：
+- 生图模式：通过文字描述或参考图生成 AI 图片
+- 生视频模式：通过文字描述生成 AI 视频
+- 对话模式：与 Agnes-2.0-Flash 大模型进行多轮对话
 
-### 1.2 对话模式下的 UI 变化
+**数据存储**：
+- 对话数据（消息记录、系统提示词等）使用浏览器 IndexedDB 持久化
+- 配置参数（API Key、模型选择、温度等）使用 localStorage 持久化
+- 广告轮次计数器存在内存中，页面刷新后重置
 
-| 元素 | 图片/视频模式 | 对话模式 |
-|------|:---:|:---:|
-| 参考图 URL 输入框 | 显示 | **显示** |
-| 参考图缩略图 | 显示 | **显示** |
-| 提示词 placeholder | "描述你想要生成的图像……" | "输入消息……（可附带图片URL）" |
-| 历史消息显示 | 图片/视频网格 | **对话气泡形式** |
-| 操作按钮（删除/重生成/复制/请求体） | 显示 | **简化为仅复制** |
+**API 端点**：
+- 生图：`https://apihub.agnes-ai.com/v1/images/generations`
+- 生视频：`https://apihub.agnes-ai.com/v1/videos`
+- 对话（流式）：`https://apihub.agnes-ai.com/v1/chat/completions`
+- 视频任务查询：`https://apihub.agnes-ai.com/agnesapi`
 
 ---
 
-## 二、侧边栏：新增「对话配置」
+## 二、界面设计
 
-```
-┌─ 通用配置 ──────────────────────┐
-│ API Key / 随机种子                │
-├─ 生图配置 ──────────────────────┤
-│ 模型 / 输出尺寸                   │
-├─ 生视频配置 ────────────────────┤
-│ 模型 / 分辨率 / 帧数 / 帧率        │
-├─ 对话配置 ──────── [新增] ──────┤
-│ 模型: [下拉] agnes-2.0-flash     │
-│ 系统提示词: [textarea, 3行]       │
-│ 温度 (temperature): [range 0~2]   │
-│ 最大 Token: [number]              │
-│ 深度思考: [checkbox toggle]        │
-├─ 说明 ──────────────────────────┤
-│ Agnes 平台介绍                   │
-└─────────────────────────────────┘
-```
+### 2.1 整体布局
 
-### 2.1 对话配置项详情
+应用采用左右双栏布局：
 
-| 设置项 | DOM id | localStorage key | 默认值 | 说明 |
-|--------|--------|-----------------|--------|------|
-| 模型 | `chatModel` | `agnes_chat_model` | `agnes-2.0-flash` | 目前仅一个 |
-| 系统提示词 | `chatSystem` | `agnes_chat_system` | `""` | system role 消息 |
-| 温度 | `chatTemp` | `agnes_chat_temp` | `0.7` | 0=确定，1=随机 |
-| 最大 Token | `chatMaxTokens` | `agnes_chat_max_tokens` | `4096` | 1024~65535 |
-| 深度思考 | `chatThinking` | `agnes_chat_thinking` | `false` | 启用 thinking 模式 |
+**左侧 —— 侧边栏（固定 300px 宽）**
+- 顶部：Logo 区域（螃蟹 SVG 图标 + "智虾绘坊" 应用名称）
+- 中部：对话列表区（可滚动，显示所有历史对话）
+- 底部：模型设置面板（可折叠展开）
 
-### 2.2 DOM 元素设计
-
-```html
-<div class="sidebar-section">
-  <h3 class="sidebar-group-title">对话配置</h3>
-</div>
-
-<div class="sidebar-section">
-  <label class="sidebar-label">模型</label>
-  <select id="chatModel">
-    <option value="agnes-2.0-flash">Agnes-2.0-Flash</option>
-  </select>
-</div>
-
-<div class="sidebar-section">
-  <label class="sidebar-label">系统提示词</label>
-  <textarea id="chatSystem" rows="3" placeholder="设定 AI 角色和行为……"></textarea>
-</div>
-
-<div class="sidebar-section">
-  <label class="sidebar-label">温度: <span id="chatTempVal">0.7</span></label>
-  <input type="range" id="chatTemp" min="0" max="2" step="0.1" value="0.7" />
-</div>
-
-<div class="sidebar-section">
-  <label class="sidebar-label">最大 Token</label>
-  <input type="number" id="chatMaxTokens" value="4096" min="1" max="65535" />
-</div>
-
-<div class="sidebar-section">
-  <label class="sidebar-label" style="display:flex;align-items:center;gap:8px;">
-    <input type="checkbox" id="chatThinking" />
-    深度思考 (enable_thinking)
-  </label>
-</div>
-```
+**右侧 —— 主内容区（自适应宽度）**
+- 顶部：对话标题栏（显示当前对话名称、状态指示灯、操作按钮）
+- 中部：消息显示区（可滚动，按时间顺序展示所有消息）
+- 底部：输入区（提示词输入框、参考图管理、发送按钮）
 
 ---
 
-## 三、流式输出实现
+### 2.2 侧边栏详细设计
 
-### 3.1 请求格式（纯文本）
+#### 2.2.1 对话列表区
+- 标题行：左侧显示"对话记录"文字，右侧有"新建"按钮
+- 每个对话项显示：状态指示灯（绿/橙）、对话名称、消息条数摘要
+- 状态指示灯含义：
+  - 绿色：空闲，无进行中的请求
+  - 橙色：正在等待 API 响应
+- 交互：单击切换对话，双击进入重命名编辑状态
+- 当前激活的对话项有高亮背景色
 
-```json
-POST https://apihub.agnes-ai.com/v1/chat/completions
-Authorization: Bearer YOUR_API_KEY
-Content-Type: application/json
+#### 2.2.2 模型设置面板（5 个可折叠分组）
 
-{
-  "model": "agnes-2.0-flash",
-  "messages": [
-    { "role": "system", "content": "你是一个有帮助的助手。" },
-    { "role": "user", "content": "上一轮问题" },
-    { "role": "assistant", "content": "上一轮回答" },
-    { "role": "user", "content": "当前问题" }
-  ],
-  "temperature": 0.7,
-  "max_tokens": 4096,
-  "stream": true,
-  "chat_template_kwargs": {
-    "enable_thinking": true
-  }
-}
-```
+每个分组有一个标题栏，点击可折叠/展开，折叠状态会保存到 localStorage，页面刷新后自动恢复。
 
-### 3.1.1 请求格式（含图片 URL 输入）
+**分组一：通用配置**
+- API Key 输入框（普通文本框，支持逗号分隔多个 Key 以实现轮询切换）
+- 文本系统提示词（多行文本框）
+- 图像系统提示词（多行文本框）
+- 视频系统提示词（多行文本框）
+- 提示词优化词（多行文本框）—— 用于"优化提示词"功能的系统提示词，默认包含一段优化指令
 
-Agnes-2.0-Flash **支持**通过图片 URL 进行图片理解。当消息包含图片时，`content` 使用数组格式：
+**分组二：生图配置**
+- 模型选择（下拉框，可选 Agnes-Image-2.1-Flash / Agnes-Image-2.0-Flash）
+- 输出尺寸（下拉框，支持多种预设尺寸，最高支持 4K）
+- 随机种子（数字输入框，留空则自动生成随机种子）
 
-```json
-POST https://apihub.agnes-ai.com/v1/chat/completions
-Authorization: Bearer YOUR_API_KEY
-Content-Type: application/json
+**分组三：生视频配置**
+- 模型选择（下拉框，当前仅 Agnes-Video-V2.0）
+- 随机种子（数字输入框，留空则自动生成随机种子）
+- 视频分辨率（下拉框，支持横版/竖版多种分辨率）
+- 帧数（下拉框，可选 41/81/121/161/241/361/441 帧）
+- 帧率（下拉框，可选 1/2/4/8/12/18/24/30/48/60 fps）
+- 推理步数（数字输入框，留空则使用模型默认值）
 
-{
-  "model": "agnes-2.0-flash",
-  "messages": [
-    {
-      "role": "user",
-      "content": [
-        { "type": "text", "text": "请描述这张图片" },
-        { "type": "image_url", "image_url": { "url": "https://example.com/image.jpg" } }
-      ]
-    }
-  ],
-  "temperature": 0.7,
-  "max_tokens": 4096,
-  "stream": true
-}
-```
+**分组四：文本对话配置**
+- 模型选择（下拉框，当前仅 Agnes-2.0-Flash）
+- 温度（滑块，范围 0~2，默认 1.0，步进 0.1）
+- 核采样 Top_p（滑块，范围 0~1，默认 0.7，步进 0.05）
+- 最大 Token（数字输入框，默认 8192，范围 1~65535）
+- 上下文提交量（滑块，范围 1~100 轮，默认 10 轮）
+- 深度思考（开关切换按钮）
 
-### 3.2 SSE 响应解析（OpenAI 兼容格式）
-
-```
-data: {"id":"chatcmpl_xxx","object":"chat.completion.chunk","created":123,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
-
-data: {"id":"chatcmpl_xxx","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
-
-data: {"id":"chatcmpl_xxx","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}
-
-data: {"id":"chatcmpl_xxx","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
-
-data: [DONE]
-```
-
-### 3.3 流式处理逻辑
-
-```
-fetch(chatEndpoint, { body: JSON.stringify(req) })
-  → response.body.getReader()
-  → 逐行读取 → 按 "data: " 分割
-  → JSON.parse(data) 
-  → 提取 choices[0].delta.content
-  → 追加到 AI 消息气泡的 textContent
-  → 循环直到 "data: [DONE]"
-```
-
-### 3.4 消息气泡渲染
-
-对话模式下 AI 消息实时流式追加：
-```javascript
-// 伪代码
-let fullText = '';
-const aiMsgBubble = createBubble('ai');
-
-while (true) {
-  const { done, chunk } = await reader.read();
-  if (done) break;
-  const lines = chunk.split('\n');
-  for (const line of lines) {
-    if (line.startsWith('data: ')) {
-      const data = line.slice(6);
-      if (data === '[DONE]') break;
-      const json = JSON.parse(data);
-      const content = json.choices?.[0]?.delta?.content || '';
-      fullText += content;
-      aiMsgBubble.textContent = fullText;
-      scrollToBottom();
-    }
-  }
-}
-```
+**分组五：说明**
+- 显示 Agnes Platform 注册引导文字和链接
 
 ---
 
-## 四、多轮对话实现
+### 2.3 主内容区详细设计
 
-### 4.1 消息历史构造（含图片 URL 支持）
+#### 2.3.1 顶部标题栏
+- 左侧：状态指示灯 + 当前对话名称
+- 右侧操作按钮组：
+  - 背景词按钮：打开系统提示词编辑弹窗
+  - 重命名按钮：重命名当前对话
+  - 删除按钮：删除当前对话（需确认）
+  - 全屏按钮：切换浏览器全屏模式
 
-```javascript
-function buildChatMessages(conv, userPrompt, imageUrls) {
-  const messages = [];
+#### 2.3.2 消息显示区
+- 空白状态（无消息时）：显示欢迎页，包含 Logo、应用名称、功能简介、注册引导链接
+- 图片模式消息：参考图缩略图 + 生成图片网格
+- 视频模式消息：视频播放器 + 任务进度条 + 刷新/暂停按钮
+- 对话模式消息：聊天气泡形式
+- 广告消息：居中显示，带虚线边框和渐变背景，10 秒倒计时关闭按钮
 
-  // system prompt（如果设置了）
-  const systemPrompt = document.getElementById('chatSystem').value.trim();
-  if (systemPrompt) {
-    messages.push({ role: 'system', content: systemPrompt });
-  }
+**对话消息气泡样式**：
+- 用户气泡：右对齐，蓝色背景（`var(--accent)`），顶部右侧圆角 32px，白色文字
+- AI 气泡：左对齐显示于消息行左端，无背景色，顶部左侧圆角 32px，文字内容左对齐，支持 Markdown 渲染
+- 错误信息：文字以红色系显示
 
-  // 历史对话（当前对话的所有 user/ai 消息对）
-  for (const msg of conv.messages) {
-    if (msg.role === 'user') {
-      // 如果该用户消息有关联的图片 URL，使用 content 数组格式
-      if (msg.refUrls && msg.refUrls.length > 0) {
-        const content = [{ type: "text", text: msg.text }];
-        for (const url of msg.refUrls) {
-          content.push({ type: "image_url", image_url: { url: url } });
-        }
-        messages.push({ role: 'user', content: content });
-      } else {
-        messages.push({ role: 'user', content: msg.text });
-      }
-    } else if (msg.role === 'ai' && msg.isError !== true) {
-      messages.push({ role: 'assistant', content: msg.text });
-    }
-  }
+**图片/视频模式消息气泡样式**：
+- 用户气泡：右侧对齐，顶部右侧圆角 32px，背景色为次级背景色（`var(--bg-secondary)`）
+- AI 气泡：左侧对齐，顶部左侧圆角 32px，有 1px 边框无背景色
 
-  // 当前用户消息（含图片 URL 时使用 content 数组）
-  if (imageUrls && imageUrls.length > 0) {
-    const content = [{ type: "text", text: userPrompt }];
-    for (const url of imageUrls) {
-      content.push({ type: "image_url", image_url: { url: url } });
-    }
-    messages.push({ role: 'user', content: content });
-  } else {
-    messages.push({ role: 'user', content: userPrompt });
-  }
+#### 2.3.3 输入区
+- 拖拽手柄：输入区顶部有一条细横条，拖拽可调整输入区高度（桌面端），最大不超过视口 80%
+- 参考图管理行：
+  - 模式切换按钮（图片/视频/对话 三选一），选择后可展开弹出菜单
+  - 参考图 URL 输入框（支持粘贴多个 URL，逗号或换行分隔；粘贴图片文件时自动转为 Base64 数据 URL）
+  - 文件选择按钮（点击可从本地相册选取图片，自动转为 WebP Base64 数据 URL，图片大于 1024 像素时等比例缩放）
+  - 参考图缩略图标签（已添加的参考图显示为缩略图，可单独删除）
+- 提示词输入框（多行文本区域，自动保持高度 100%，Ctrl+Enter 发送）
+- 优化提示词按钮（点击后调用 AI 优化当前提示词，带旋转动画；优化中按钮禁用）
+- 发送按钮（圆形蓝色，点击或 Ctrl+Enter 触发；加载中/配置不足时禁用）
 
-  return messages;
-}
-```
-
-### 4.2 图片理解支持
-
-Agnes-2.0-Flash **支持**通过图片 URL 进行图片理解（官方文档确认），因此：
-
-- 对话模式下**保留**参考图 URL 输入框和缩略图显示
-- 对话模式下 refUrls 数组会传入 `buildChatMessages()`，构建包含 `image_url` 类型的 content 数组
-- 图片 URL 要求：必须公网可访问，建议使用 JPG/JPEG/PNG/WebP 格式
-- 图片理解可与工具调用、流式输出和 Agent 工作流结合使用
-
-> **注意**：如图片 URL 需要登录、鉴权或存在防盗链，模型可能无法读取。
+#### 2.3.4 滚动按钮
+- 滚动到顶部按钮：消息区右上角，鼠标悬停或焦点落入时显示
+- 滚动到底部按钮：消息区右下角，鼠标悬停或焦点落入时显示
 
 ---
 
-## 五、对话气泡样式
+## 三、功能说明
 
-### 5.1 不同于图片/视频模式的渲染
+### 3.1 三模式切换
 
-对话模式下 `buildBubbleContent()` 分支：
+用户可通过输入区左侧的模式切换按钮，在三种模式间切换。切换后：
+- 提示词输入框的占位文字会相应变化
+- 参考图输入区域始终显示（三种模式均支持参考图/图片理解）
+- 当前模式与对话绑定（存储在 `conv.chatMode`），切换对话时自动恢复该对话的模式
 
-```javascript
-if (chatMode === 'chat') {
-  if (msg.role === 'user') {
-    // 右对齐，蓝色背景气泡
-    html += `<div class="chat-bubble chat-bubble-user">${msg.text}</div>`;
-  } else {
-    // 左对齐，灰色背景气泡，流式追加
-    html += `<div class="chat-bubble chat-bubble-ai" id="${streamId}">${msg.text || ''}</div>`;
-  }
-}
-```
+**图片模式**：向 Agnes-Image API 发送请求，生成 AI 图片。支持文生图、图生图（单张或多张参考图）。
 
-### 5.2 CSS
+**视频模式**：向 Agnes-Video API 提交视频生成任务，然后通过轮询查询任务状态，任务完成后展示视频播放器。支持关键帧模式和负向提示词。
 
-```css
-.chat-bubble {
-  max-width: 80%; padding: 10px 14px;
-  border-radius: var(--radius-sm); line-height: 1.6;
-  font-size: 14px; word-break: break-word;
-}
-.chat-bubble-user {
-  margin-left: auto; margin-right: 12px;
-  background: var(--accent); color: #fff;
-}
-.chat-bubble-ai {
-  margin-right: auto; margin-left: 12px;
-  background: var(--bg-secondary); color: var(--text-primary);
-}
-```
+**对话模式**：向 Agnes-2.0-Flash API 发送流式请求，AI 回复以打字机效果逐字显示。支持多轮对话、实时 Markdown 渲染、深度思考展示。
 
 ---
 
-## 六、发送与接收逻辑
+### 3.2 对话管理
 
-### 6.1 `buildRequestBody()` 扩展
+**新建对话**：点击侧边栏"新建"按钮，创建一个新对话，自动切换为当前对话。
 
-```javascript
-function buildRequestBody(prompt, imageUrls) {
-  const cMode = getChatMode();
+**重命名对话**：双击对话列表项，或点击标题栏的"重命名"按钮，进入编辑状态，按 Enter 确认，Escape 取消。
 
-  if (cMode === 'chat') {
-    // 对话请求体
-    const conv = getCurrentConv();
-    const messages = buildChatMessages(conv, prompt, imageUrls);
-    const body = {
-      model: document.getElementById('chatModel').value,
-      messages: messages,
-      temperature: parseFloat(document.getElementById('chatTemp').value),
-      max_tokens: parseInt(document.getElementById('chatMaxTokens').value),
-      stream: true,
-    };
-    if (document.getElementById('chatThinking').checked) {
-      body.chat_template_kwargs = { enable_thinking: true };
-    }
-    return body;
-  }
+**删除对话**：点击标题栏的"删除"按钮，需确认后删除。删除后自动切换到下一个对话，若无对话则自动新建一个空对话。
 
-  if (cMode === 'video') { /* 现有逻辑 */ }
-  /* cMode === 'image' 现有逻辑 */
-}
-```
+**切换对话**：单击对话列表项。切换前会检查当前对话是否有进行中的请求，若有则提示用户确认。切换时中断当前流式请求并自动保存当前对话数据。
 
-### 6.2 `sendMessage()` 扩展
-
-```javascript
-async function sendMessage() {
-  // ...
-  const cMode = getChatMode();
-  
-  if (cMode === 'chat') {
-    const imageUrls = getRefUrls(); // 获取参考图 URL
-    await sendChatMessage(prompt, imageUrls);
-    return;
-  }
-  
-  // 现有图片/视频逻辑
-}
-```
-
-### 6.3 `sendChatMessage()` 新函数
-
-```javascript
-async function sendChatMessage(prompt, imageUrls) {
-  const conv = getCurrentConv();
-  const reqBody = buildRequestBody(prompt, imageUrls || []);
-  const endpoint = 'https://apihub.agnes-ai.com/v1/chat/completions';
-  
-  // 先追加 user 消息（含图片 URL）
-  addMessageToConv(conv.id, 'user', prompt, false, imageUrls || []);
-  
-  // 创建 AI 消息气泡（空内容，等待流式填充）
-  const streamId = 'stream_' + Date.now();
-  addMessageToConv(conv.id, 'ai', '', false, [], [], { _streamId: streamId });
-  renderAllMessages();
-  
-  // 发起流式请求
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify(reqBody),
-  });
-  
-  // SSE 流式读取
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let fullText = '';
-  let buffer = '';
-  
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop(); // 保留不完整行
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const data = line.slice(6);
-      if (data === '[DONE]') continue;
-      try {
-        const json = JSON.parse(data);
-        const content = json.choices?.[0]?.delta?.content || '';
-        fullText += content;
-        // 更新 DOM 中的气泡文字
-        const el = document.getElementById(streamId);
-        if (el) {
-          el.textContent = fullText;
-          scrollToBottom();
-        }
-      } catch {}
-    }
-  }
-  
-  // 流结束，保存完整文本到 IndexedDB
-  const aiMsg = conv.messages.find(m => m.apiBodies?._streamId === streamId);
-  if (aiMsg) {
-    aiMsg.text = fullText;
-    aiMsg.time = new Date().toISOString();
-    await dbPut(conv);
-  }
-}
-```
+**自动命名**：对话中第一条消息发送后，自动将消息前 30 个字符设为对话名称。
 
 ---
 
-## 七、对话模式下的操作按钮
+### 3.3 系统提示词（背景词）
 
-对话模式下消息气泡的操作按钮策略：
+每个对话独立存储三套系统提示词（文本/图像/视频各一套），切换模式时自动使用对应模式的系统提示词。
 
-| 按钮 | user 消息 | AI 消息 |
-|------|:---:|:---:|
-| ❌ 删除 | 不显示 | 不显示 |
-| 🔄 重生成 | 不显示 | **显示**（重新发送当前 prompt） |
-| 📋 复制 | 显示 | **显示** |
-| 请求体/响应体 | 不显示 | **显示**（折叠展开） |
-| ⏸ 暂停自刷 | 不显示 | 不显示 |
+**编辑方式**：点击标题栏的"背景词"按钮，弹出编辑弹窗，可分别编辑三套系统提示词，点击保存后写入当前对话数据。
 
-### 重生成逻辑
-
-对话模式重生成：
-1. 保留当前 user 消息
-2. 删除当前 AI 消息
-3. 用相同的 messages[]（不含最后一条 assistant 回复）重新请求
-4. 流式输出新回复
+**拼接规则**：系统提示词与用户提示词之间用高强度定界符拼接（定界符长度为 30 个字符，避免与用户内容冲突）。API 响应回来后，通过定界符精确提取用户提示词部分进行展示。
 
 ---
 
-## 八、文件改动清单
+### 3.4 提示词优化
 
-| 区域 | 改动 |
-|------|------|
-| **HTML - 侧边栏** | 新增「对话配置」分组（chatModel, chatSystem, chatTemp, chatMaxTokens, chatThinking）|
-| **HTML - 模式菜单** | 新增 💬 对话 选项 |
-| **CSS** | 对话气泡样式、温度 slider 样式 |
-| **DOM 引用** | 新增 chatModel, chatSystem, chatTemp, chatMaxTokens, chatThinking |
-| **`init()`** | 恢复对话配置 localStorage |
-| **`setChatMode()`** | 支持 'chat' 模式 |
-| **`updateChatModeUI()`** | 对话模式保留 refUrl 输入框（因 agnes-2.0-flash 支持图片理解）|
-| **`buildRequestBody()`** | 对话模式 → chat completions 格式 |
-| **`sendMessage()`** | 对话模式 → 调用 `sendChatMessage()` |
-| **新增 `sendChatMessage()`** | SSE 流式请求 + 打字机效果渲染 |
-| **新增 `buildChatMessages()`** | 构造 messages[] 数组（system + 历史 + 当前）|
-| **`buildBubbleContent()`** | 对话模式 → 气泡样式渲染 |
-| **`regenerateFromUser()`** | 对话模式 → 删除 AI msg，重新流式请求 |
-| **`getEndpoint()`** | 对话模式 → chat endpoint |
+点击输入区的"优化提示词"按钮，应用会将当前提示词与通用配置中"提示词优化词"的内容拼接后，发送给对话模型进行优化，然后将优化后的提示词回填到输入框。优化过程中按钮显示旋转动画和"优化中…"文字，并处于禁用状态。此请求使用非流式模式（`stream: false`），参数引用对话配置的温度、核采样和最大 Token。
 
 ---
 
-## 九、待确认 / 可扩展项
+### 3.5 消息操作
 
-1. **图片理解 Prompt 优化**：Agnes-2.0-Flash 已支持图片 URL 输入和图片理解（通过 `image_url` 类型），后续可优化图片理解场景的 Prompt 模板（如截图分析、界面分析、物体识别等）
-2. **工具调用 (Tool Use)**：API 支持 `tools` 参数，后续可加入智能体工作流
-3. **Thinking 显示**：模型开启思考后，SSE 中可能有 `reasoning_content` 字段，可单独显示思考过程
-4. **对话历史长度控制**：256K context window 很大，但多轮累积可能导致请求体过大，后续可加入消息条数裁剪逻辑
-5. **中断生成**：添加停止按钮，用户在流式输出中可中断
+**用户消息操作按钮**（悬停显示，图片/视频/对话模式均适用）：
+- 复制提示词：将用户消息文本复制到剪贴板
+- 删除：同时删除该用户消息及其对应的 AI 回复（需确认）
+- 重新生成：使用最新的提示词和系统提示词重新发送请求
 
----
+**AI 消息操作按钮**（分模式）：
+- 对话模式：仅底部显示"复制内容"按钮和字数统计
+- 图片/视频模式：提供"复制图片/视频 URL"和"在新窗口打开"按钮
 
-## 十、代码审查发现的 3 个设计缺陷及修复方案
-
-> 以下问题在代码探索阶段发现（2026-06-09），设计文档 v1.1 未覆盖，在此补充。
-
-### 10.1 缺陷一：renderAllMessages 全量重渲染会打断流式输出
-
-**问题**：当前 `renderAllMessages()` 执行 `$chatMessages.innerHTML = ''` 全量清空重建 DOM。
-流式输出中 `sendChatMessage` 正在向某个 DOM 元素追加文本，如果此时触发 `renderAllMessages`
-（如切换对话、重命名对话标题），流式内容全部丢失。
-
-**修复方案**：
-
-1. 流式 AI 消息在 `apiBodies` 中设置 `_streaming: true` 和 `_streamId` 标记
-2. `buildBubbleContent()` 渲染时检测该标记，不用 `msg.text` 渲染，而是读取实时 DOM `textContent` 回填：
-
-```javascript
-// buildBubbleContent() 中 chat 模式的 AI 消息渲染
-if (chatMode === 'chat' && msg.role === 'ai') {
-  let text = msg.text || '';
-  if (msg.apiBodies?._streaming && msg.apiBodies?._streamId) {
-    const el = document.querySelector(`[data-stream-id="${msg.apiBodies._streamId}"]`);
-    if (el) text = el.textContent || text;
-  }
-  html += `<div class="chat-bubble chat-bubble-ai" data-stream-id="${msg.apiBodies._streamId || ''}">${text}<span class="stream-cursor">|</span></div>`;
-}
-```
-
-3. 流结束后 `_streaming = false`，后续渲染直接从 `msg.text` 读取（支持 Markdown 解析）
-
-### 10.2 缺陷二：会话切换时应中断流式输出并提示用户
-
-**问题**：用户在流式输出进行中切换对话，`switchConversation()` 直接切换 `currentConvId`，
-原来对话的流式 SSE 连接仍在运行但没有接收端，造成资源浪费和状态混乱。
-
-**修复方案**——`switchConversation()` 加拦截：
-
-```javascript
-async function switchConversation(id) {
-  const currConv = getCurrentConv();
-  if (currConv && convPendingRequests[currentConvId] > 0) {
-    const confirmed = confirm(
-      '当前对话正在进行中，切换可能导致图片/对话/视频显示错误，确定切换吗？'
-    );
-    if (!confirmed) return;
-  }
-
-  // 中断流式请求
-  if (currentAbortController) {
-    currentAbortController.abort();
-    currentAbortController = null;
-  }
-
-  // 保存当前并切换
-  if (currentConvId && getCurrentConv()) {
-    await saveCurrentConv();
-  }
-  currentConvId = id;
-  updateChatModeUI();
-  // ... 后续逻辑
-}
-```
-
-### 10.3 缺陷三：buildBubbleContent 中 chat 模式分支需要完整实现
-
-**问题**：设计文档中气泡样式伪代码过于简略，未说明 chat 模式如何完整处理消息的所有 UI 元素。
-
-**补充完整代码**：
-
-```javascript
-function buildBubbleContent(msg) {
-  const cMode = getChatMode();
-
-  // ========== Chat 模式 ==========
-  if (cMode === 'chat') {
-    let html = '';
-    const streamId = msg.apiBodies?._streamId || '';
-    const streaming = msg.apiBodies?._streaming === true;
-
-    if (msg.role === 'user') {
-      html += `<div class="chat-bubble chat-bubble-user">${escapeHtml(msg.text)}</div>`;
-      html += getChatMsgActions(msg, 'user');
-    } else {
-      let text = msg.text || '';
-      if (streaming && streamId) {
-        const el = document.querySelector(`[data-stream-id="${streamId}"]`);
-        if (el) text = el.textContent || text;
-      }
-
-      html += `<div class="chat-bubble chat-bubble-ai" data-stream-id="${streamId}">`;
-      if (msg.isError) {
-        html += `<div class="bubble-error">${escapeHtml(text)}</div>`;
-      } else if (streaming) {
-        html += `${escapeHtml(text)}<span class="stream-cursor">|</span>`;
-      } else {
-        html += text; // 流完成后支持 Markdown
-      }
-      html += '</div>';
-      html += getChatMsgActions(msg, 'ai');
-    }
-
-    // 请求体/响应体折叠
-    if (msg.apiBodies?.requestBody) {
-      html += buildApiCollapse(msg);
-    }
-    return html;
-  }
-
-  // ========== 图片/视频模式：现有逻辑 ==========
-  // ... 保持不变
-}
-```
-
-**对话模式 vs 图片/视频模式 UI 差异**：
-
-| 元素 | 图片/视频模式 | 对话模式 |
-|------|:---:|:---:|
-| 消息布局 | 左头像 + 右气泡框 | 纯气泡，无头像 |
-| 用户消息 | 普通文本 div（可点击编辑）| 右对齐蓝色气泡 |
-| AI 消息 | 普通文本 div + 图片/视频网格 | 左对齐灰色气泡 + Markdown |
-| 参考图 | 显示缩略图行 | 不显示 |
-| 生成图 | gen-image-wrapper | 不适用 |
-| 重生成按钮 | 用户消息显示 | **AI 消息显示** |
-| 复制按钮 | 用户消息显示 | 用户和 AI **都显示** |
-| 删除按钮 | 用户消息显示 | **不显示** |
-| 请求体折叠 | 用户+AI | 用户+AI |
+**查看请求/响应体**：每条消息下方有可折叠的代码块，展示发送给 API 的请求体和 API 返回的响应体，默认折叠。用户消息显示请求体，AI 消息显示请求体 + 响应体。
 
 ---
 
-*文档版本：v1.3*
-*日期：2026-06-09*
-*变更 v1.2：补充代码审查发现的 3 个设计缺陷及修复方案（renderAllMessages 流式保护、会话切换中断保护、buildBubbleContent chat 分支具体化）*
-*变更 v1.3：新增 Thinking 内容展示（reasoning_content 解析、展开/折叠功能）和 Markdown 渲染支持（引入 marked.js）*
+### 3.6 对话模式专属功能
+
+**Markdown 渲染**：AI 回复使用 marked.js 进行 Markdown 渲染。流式输出过程中实时渲染 Markdown（每收到一个数据块即解析渲染），流结束后最终更新一次 DOM。
+
+**深度思考展示**：开启"深度思考"后，模型会在回复正文前输出思考过程。思考内容以可折叠区块展示在正文上方，点击标题可展开/收起。当正文内容开始输出时，thinking 区块自动折叠收起。
+
+**流式输出**：对话回复以 SSE 流式方式接收，实时以 Markdown 渲染到气泡中，自带闪烁光标效果。首次收到内容时自动移除外置光标。
+
+**上下文控制**：通过"上下文提交量"参数控制每次请求向 API 发送多少轮历史消息。构建上下文时，仅包含对话模式的过往消息（根据 `_endpoint = /v1/chat/completions` 过滤），图片/视频模式的消息不会混入对话历史中。
+
+**中断生成**：流式输出过程中，切换对话或删除消息会通过 AbortController 中断当前 SSE 连接。中断后 AI 消息标记为未完成（`_incomplete`），保留已收到的部分内容。
+
+**对话重生成**：重新生成时，先临时移除旧 AI 消息（避免空白回复纳入上下文），使用当前用户消息文本与最新系统提示词构建请求体，然后插入 AI 占位消息并发起新的流式请求。流结束后将完整内容写入 IndexedDB。
 
 ---
 
-## 十一、Thinking 内容展示（v1.3 新增）
+### 3.7 视频模式专属功能
 
-### 11.1 SSE 中的 thinking 字段
+**任务提交**：视频生成是异步任务，发送请求后先获取 task_id，应用自动每 10 秒轮询一次任务状态。
 
-Agnes-2.0-Flash 在深度思考模式下，SSE 流式响应中会包含 `reasoning_content` 字段：
+**进度展示**：视频消息展示任务状态（排队中/生成中/已完成/失败）和进度百分比（进度条形式）。状态流转为：queued（排队中）→ generating（生成中）→ completed（已完成），任一阶段可变为 failed（失败）。
 
-```json
-{
-  "choices": [{
-    "delta": {
-      "content": "...",
-      "reasoning_content": "正在思考..."
-    }
-  }]
-}
-```
+**自动轮询**：任务完成前，应用每 10 秒自动查询一次状态。点击"暂停自刷"停止自动轮询，点击"恢复自刷"重新开始。
 
-### 11.2 实现方案
+**参考图支持**：单张参考图传入 `body.image` 字段，多张参考图传入 `extra_body.image` 字段。
 
-1. **流式读取时捕获**：`sendChatMessage` 中同时提取 `delta.content` 和 `delta.reasoning_content`
-2. **实时预览**：thinking 内容实时追加到 DOM（`data-thinking-id`）
-3. **持久化存储**：流结束后保存到 `msg.apiBodies._thinkingText`
-4. **折叠/展开 UI**：点击头部切换显示隐藏
+**关键帧模式**：提示词中包含 `#关键帧` 或 `#关键帧模式` 标记时，请求的 `extra_body.mode` 设置为 `"keyframes"`。该标记在发送前会从提示词中去除。
 
-### 11.3 CSS 样式
-
-```css
-.thinking-block {
-  margin-bottom: 10px; border-radius: var(--radius-sm);
-  background: rgba(78,168,222,0.08); border: 1px solid rgba(78,168,222,0.2);
-}
-.thinking-header {
-  display: flex; align-items: center; gap: 6px;
-  padding: 6px 10px; cursor: pointer; font-size: 12px; color: var(--accent);
-}
-.thinking-content {
-  display: none; padding: 8px 12px 10px 32px;
-  font-size: 12px; line-height: 1.6; color: var(--text-secondary);
-  border-top: 1px solid rgba(78,168,222,0.1); max-height: 300px; overflow-y: auto;
-}
-.thinking-content.open { display: block; }
-```
+**负向提示词**：提示词中使用 `#负向提示词` 或 `#反向提示词` 标记时，标记后的内容作为 `negative_prompt` 参数发送给 API。该标记及内容在发送前会从提示词正文中去除。
 
 ---
 
-## 十二、Markdown 渲染（v1.3 新增）
+### 3.8 图片模式专属功能
 
-### 12.1 引入 marked.js
+**文生图**：仅输入提示词，API 生成图片。请求固定使用 `response_format: 'url'` 参数。
 
-使用 CDN 引入轻量级 Markdown 解析库：
+**图生图**：添加参考图后，API 基于参考图进行变换生成，请求中添加 `extra_body.image` 字段。支持同时添加多张参考图。
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-```
+**输出尺寸**：可选择多种预设尺寸，从 1024 正方形到 4K 高清均有覆盖。
 
-配置：
+**用户提示词保存**：用户消息保存的是经过定界符提取后的纯用户提示词（不含系统提示词），API 请求中使用拼接了系统提示词的完整提示词。
 
-```javascript
-marked.setOptions({
-  breaks: true,   // 换行转换为 <br>
-  gfm: true,      // GitHub 风格 Markdown
-});
-```
+---
 
-### 12.2 渲染时机
+### 3.9 广告功能
 
-- **流式输出中**：不使用 Markdown（纯文本 + 转义）
-- **流结束后**：使用 `marked.parse(text)` 渲染完整回复
+应用会在对话过程中按轮次插入广告块：
+- 计数规则：每发送一条用户消息（图片/视频/对话均计入）广告轮次加 1；重新生成不计入
+- 触发时机：每累计 5 轮后，在 AI 占位消息插入之后立即插入一条广告（不等待 API 响应）
+- 广告内容：当前为占位内容（"广告位招商"），可替换为真实广告
+- 关闭机制：广告块右上角有圆形倒计时按钮，从 10 秒倒数，归零后变为"✕"按钮，点击可手动移除
+- 广告块不持久化，刷新页面后消失；切换对话但未刷新时计数器继续累积
 
-### 12.3 支持的 Markdown 语法
+---
 
-| 语法 | 渲染结果 |
-|------|---------|
-| `# H1` / `## H2` | 标题 |
-| `**粗体**` / `*斜体*` | 格式化文本 |
-| `列表` / `1. 有序列表` | HTML 列表 |
-| `` `行内代码` `` | 代码片段 |
-| ```` ```代码块``` ```` | 代码块 |
-| `> 引用` | 引用块 |
-| `[链接](url)` | 超链接 |
-| `---` | 分割线 |
-| `表格` | HTML 表格 |
+### 3.10 自动重试机制
 
-### 12.4 Markdown 内容样式
+API 请求在遇到异常时会自动进行重试，无需用户手动操作：
 
-```css
-.md-content h1, .md-content h2, .md-content h3 { color: var(--text-primary); }
-.md-content code { background: rgba(78,168,222,0.1); padding: 2px 5px; border-radius: 3px; }
-.md-content pre { background: #0d1117; border: 1px solid var(--border); padding: 10px 12px; }
-.md-content blockquote { border-left: 3px solid var(--accent); background: rgba(78,168,222,0.05); }
-```
+- 触发条件：API 返回服务器错误（HTTP 5xx）、请求频率限制（HTTP 429）、网络连接失败、API 响应体中的错误信息（如"不可用"、"服务器错误"、"受限字词"等）
+- 不重试的情况：API Key 无效（HTTP 401）、用户中断（AbortError）
+- 重试策略：首次等待 2 秒，后续每次递增 1 秒（2s → 3s → 4s → 5s → 6s）
+- 最大重试次数：5 次
+- 重试提示：自动重试时，AI 消息文本会更新为"⏳ 正在重试（n/5）…"并更新 DOM
+- 重试次数标记：请求最终成功后，在 AI 消息的时间右侧显示"已重试 N 次"（橙色文本）；若请求直接成功则不显示
+- 人工点击"重新生成"按钮不计入自动重试次数
+- 适用范围：图片生成、视频生成、对话模式（流式请求）以及重新生成操作均支持自动重试
+
+### 3.11 多 API Key 轮询机制
+
+- 在 API Key 输入框中输入多个 Key，用英文逗号 `,` 分隔（例：`key1,key2,key3`）
+- 输入框为普通文本框（非密码框），便于查看和编辑多个 Key
+- 系统在每次发起 API 请求时，按轮询（Round-Robin）顺序从 Key 列表中选取一个 Key
+- 当某个 Key 因 RPM 限制返回错误时，自动重试机制会在下一次重试中自动切换到下一个 Key
+- 单个 Key 输入保持原有兼容行为
+- 状态栏在配置了多个 Key 时会显示"就绪（N 个 Key）"
+- localStorage 以逗号分隔的原始字符串存储，Key 列表在每次 input 事件时解析
+
+### 3.12 其他功能
+
+**全屏浏览**：点击标题栏全屏按钮，通过浏览器 Fullscreen API 切换全屏模式。进入全屏后按钮图标变为"⤓"，退出全屏后恢复为"⛶"。
+
+**图片灯箱**：点击消息中的图片，弹出全屏灯箱查看大图，点击任意位置关闭。
+
+**参考图粘贴自动识别**：在参考图 URL 输入框粘贴时，如果剪贴板内容为图片格式文件，自动转为 WebP Base64 数据 URL 添加为参考图；如果为文本 URL，则按逗号/换行分割后逐个添加。
+
+**参考图文件选择**：点击"+"按钮从系统文件选择器选取本地图片，自动转为 WebP Base64 数据 URL 添加（图片大于 1024 像素时等比例缩放）。
+
+**拖拽调整输入区高度**：桌面端用户拖拽输入区顶部的手柄（三条横线图标），调整输入区高度，最大不超过视口的 80%。
+
+**移动端侧边栏**：窄屏（≤767px）下侧边栏隐藏，点击菜单按钮（☰）滑出，点击遮罩层或关闭按钮（✕）收起。
+
+**编辑提示词**：双击用户消息文本（不分模式），进入编辑状态修改提示词，失焦自动保存。编辑时隐藏输入区。
+
+**视频任务暂停/恢复自动刷新**：点击视频消息上的"暂停自刷"停止 10 秒轮询，点击"恢复自刷"立即触发一次查询并恢复轮询。
+
+**发送按钮状态**：发送按钮在 API 正在请求或配置不足时自动禁用，防止重复提交。
+
+---
+
+## 四、配置参数详细说明
+
+### 4.1 通用配置
+
+| 参数名称 | 控件类型 | 默认值 | 说明 |
+|-----------|----------|--------|------|
+| API Key | 普通文本框 | 空 | Agnes API 密钥，多个 Key 用逗号分隔，系统自动轮询分配以突破 RPM 限制 |
+| 文本系统提示词 | 多行文本框 | 空 | 对话模式使用的系统提示词 |
+| 图像系统提示词 | 多行文本框 | 空 | 图片模式使用的系统提示词 |
+| 视频系统提示词 | 多行文本框 | 空 | 视频模式使用的系统提示词 |
+| 提示词优化词 | 多行文本框 | 一段优化指令 | 用于"优化提示词"功能的系统提示词 |
+
+### 4.2 生图配置
+
+| 参数名称 | 控件类型 | 默认值 | 可选值 |
+|-----------|----------|--------|----------|
+| 模型 | 下拉框 | Agnes-Image-2.1-Flash | Agnes-Image-2.1-Flash / Agnes-Image-2.0-Flash |
+| 输出尺寸 | 下拉框 | 1024x1024 | 1024x1024 / 1024x768 / 768x1024 / 2048x2048 / 2560x1440 / 1440x2560 / 3264x1836 / 1836x3264 / 3840x2160 / 2160x3840 |
+| 随机种子 | 数字输入框 | 空（留空则自动在 1~65536 范围内随机生成） | 正整数 |
+
+### 4.3 生视频配置
+
+| 参数名称 | 控件类型 | 默认值 | 可选值 |
+|-----------|----------|--------|----------|
+| 模型 | 下拉框 | Agnes-Video-V2.0 | 仅此一种 |
+| 随机种子 | 数字输入框 | 1（留空可改为 1，但显示为"1"；留空则自动随机生成） | 正整数 |
+| 视频分辨率 | 下拉框 | 1152x768（横版） | 1152x768 / 768x1152 / 1024x576 / 768x512 / 512x768 / 2048x1366 / 1366x2048 |
+| 帧数 | 下拉框 | 121 帧（约 5 秒） | 41 / 81 / 121 / 161 / 241 / 361 / 441 |
+| 帧率 | 下拉框 | 24 fps | 1 / 2 / 4 / 8 / 12 / 18 / 24 / 30 / 48 / 60 |
+| 推理步数 | 数字输入框 | 空（使用模型默认值） | 正整数 |
+
+### 4.4 文本对话配置
+
+| 参数名称 | 控件类型 | 默认值 | 范围 |
+|-----------|----------|--------|------|
+| 模型 | 下拉框 | Agnes-2.0-Flash | 仅此一种 |
+| 温度 | 滑块（实时数值显示） | 1.0 | 0～2，步进 0.1 |
+| 核采样 Top_p | 滑块（实时数值显示） | 0.7 | 0～1，步进 0.05 |
+| 最大 Token | 数字输入框 | 8192 | 1～65535 |
+| 上下文提交量 | 滑块（实时轮数显示） | 10 轮 | 1～100 轮 |
+| 深度思考 | 开关切换 | 关 | 开/关 |
+
+---
+
+## 五、操作流程
+
+### 5.1 首次使用流程
+1. 用浏览器打开 `agnes-ai-chat.html`
+2. 应用自动创建一个新对话，显示欢迎页
+3. 点击左侧"模型设置"展开设置面板
+4. 在"通用配置"中填入从 Agnes Platform 获取的 API Key（多个 Key 用逗号分隔）
+5. 选择模式（图片/视频/对话）
+6. 输入提示词，点击发送按钮
+7. 查看生成结果
+
+### 5.2 图片生成流程
+1. 确保模式为"图片"（🎨 图标）
+2. （可选）在参考图 URL 输入框粘贴图片地址，或点击"+"从本地选取图片
+3. 在提示词输入框描述想要的图像
+4. 点击发送按钮
+5. 用户消息先显示，AI 占位消息显示"⏳ 正在生成…"
+6. 生成完成后，消息区展示生成图片网格
+7. 可点击图片放大查看，或复制图片 URL
+
+### 5.3 视频生成流程
+1. 确保模式为"视频"（🎬 图标）
+2. 在提示词输入框描述想要的视频内容
+3. （可选）使用 `#关键帧` 标记启用关键帧模式
+4. （可选）使用 `#负向提示词` 标记添加负向提示词
+5. 点击发送按钮
+6. AI 占位消息显示任务 ID 和排队状态
+7. 应用自动每 10 秒刷新任务状态
+8. 视频生成完成后，消息区展示视频播放器
+9. 可点击"暂停自刷"停止自动轮询
+
+### 5.4 对话流程
+1. 确保模式为"对话"（💬 图标）
+2. 在提示词输入框输入消息内容
+3. （可选）添加参考图 URL（支持图片理解）
+4. 点击发送按钮或按 Ctrl+Enter
+5. AI 回复以流式效果逐字显示，同时实时渲染 Markdown
+6. （若开启深度思考）思考过程以可折叠区块展示，正文输出后自动折叠
+7. 继续输入下一轮消息，支持多轮对话
+8. 点击"重新生成"可重新获取回复
+
+### 5.5 提示词优化流程
+1. 在提示词输入框输入原始提示词
+2. 点击"优化提示词"按钮
+3. 按钮进入加载状态（旋转图标 + "优化中…"文字，禁用点击）
+4. 应用调用对话模型对提示词进行优化（非流式模式）
+5. 优化完成后，优化后的提示词回填到输入框
+6. 用户可继续编辑或直接发送
+
+---
+
+## 六、数据结构
+
+### 6.1 对话对象（存储在 IndexedDB）
+
+每个对话是一个 JSON 对象，包含以下字段：
+- `id`：唯一标识符，格式为 `conv_<时间戳>_<随机字符串>`
+- `name`：对话名称，默认为"新对话 HH:MM"格式，用户可重命名
+- `messages`：消息数组，按时间顺序排列
+- `createdAt`：创建时间戳（毫秒）
+- `updatedAt`：最后更新时间戳（毫秒）
+- `chatMode`：当前模式，值为 `"image"`/`"video"`/`"chat"` 之一
+- `_sysPrompts`：对象，包含 `text`、`image`、`video` 三个字段，分别存储对应模式的系统提示词
+
+### 6.2 消息对象
+
+每条消息是一个 JSON 对象，包含以下字段：
+- `role`：角色，值为 `"user"` 或 `"ai"`
+- `text`：消息文本内容。图片/视频模式下用户消息保存的是经过定界符提取后的纯提示词
+- `isError`：布尔值，标识是否为错误消息
+- `refImages`：数组，存储用户上传的参考图 URL（仅用户消息有此字段）
+- `genImages`：数组，存储生成的图片 URL（仅图片模式的 AI 消息有此字段）
+- `apiBodies`：对象，存储请求体和响应体信息，包含以下子字段：
+  - `requestBody`：请求体 JSON 字符串
+  - `responseBody`：响应体 JSON 字符串
+  - `_endpoint`：使用的 API 端点
+  - `_streamId`：流式输出的 DOM 标识（仅对话模式）
+  - `_streaming`：布尔值，标识是否正在流式输出（仅对话模式）
+  - `_hasThinking`：布尔值，标识是否包含深度思考内容
+  - `_thinkingText`：深度思考的文本内容
+  - `_usage`：Token 使用统计（prompt_tokens / completion_tokens / total_tokens）
+  - `_incomplete`：布尔值，标识流式输出是否被中断（未完成）
+  - `videoTaskId`：视频任务 ID（仅视频模式）
+  - `videoId`：视频 ID（仅视频模式）
+  - `videoStatus`：视频任务状态（queued / completed / failed）
+  - `videoProgress`：视频生成进度（0~100 整数）
+  - `videoUrl`：视频下载地址（任务完成后）
+  - `videoPaused`：布尔值，标识视频自动轮询是否已暂停
+  - `_autoRetryCount`：自动重试次数（仅在 API 请求发生重试时记录，直接成功时不包含此字段）
+- `_msg_id`：用户消息的唯一 ID（基于 `Date.now()` 生成的时间戳）
+- `_msg_pid`：配对消息 ID（AI 消息记录对应的用户消息 ID）
+- `_mode`：该条消息使用的生成模式（image/video/chat）
+- `time`：消息时间戳（ISO 格式字符串）
+
+---
+
+## 七、持久化策略
+
+### 7.1 IndexedDB（对话数据）
+- 数据库名称：`agnes_chat_db`
+- 版本：1
+- 对象存储名称：`conversations`
+- 存储内容：所有对话对象（包含消息历史、系统提示词、模式等）
+- 读写时机：每次对话更新（新增消息、删除消息、重命名、切换模式等）立即写入
+
+### 7.2 localStorage（配置参数）
+以下配置项在每次变更时立即保存到 localStorage，页面加载时自动恢复：
+
+| localStorage Key | 对应控件 | 说明 |
+|---------------|----------|------|
+| `agnes_api_key` | API Key 输入框 | API 密钥（逗号分隔多 Key） |
+| `agnes_image_model` | 生图模型选择 | 图片生成模型 |
+| `agnes_image_size` | 输出尺寸选择 | 图片尺寸 |
+| `agnes_video_model` | 生视频模型选择 | 视频生成模型 |
+| `agnes_video_res` | 视频分辨率选择 | 视频分辨率 |
+| `agnes_video_frames` | 帧数选择 | 视频帧数 |
+| `agnes_video_fps` | 帧率选择 | 视频帧率 |
+| `agnes_seed` | 生视频随机种子 | 视频种子（初始默认 1） |
+| `agnes_image_seed` | 生图随机种子 | 图片种子 |
+| `agnes_inference_steps` | 推理步数 | 视频推理步数 |
+| `agnes_chat_model` | 对话模型选择 | 对话模型 |
+| `agnes_sys_text` | 文本系统提示词 | 对话系统提示词 |
+| `agnes_sys_image` | 图像系统提示词 | 图片系统提示词 |
+| `agnes_sys_video` | 视频系统提示词 | 视频系统提示词 |
+| `agnes_sys_optimize` | 提示词优化词 | 优化提示词系统指令 |
+| `agnes_chat_temp` | 温度滑块（含显示值） | 温度值 |
+| `agnes_chat_top_p` | 核采样滑块（含显示值） | Top_p 值 |
+| `agnes_chat_max_tokens` | 最大 Token 输入框 | 最大输出 Token |
+| `agnes_chat_thinking` | 深度思考开关 | 是否开启思考 |
+| `agnes_chat_rounds` | 上下文提交量滑块（含显示值） | 历史轮数 |
+| `sidebar_group_<分组标题>` | 分组折叠状态 | 各分组是否折叠 |
+
+### 7.3 Session 内存（非持久化）
+- `globalAdRoundCounter`：广告轮次计数器，页面刷新后重置为 0
+- `apiKeys`：解析后的 Key 数组（每次 input 事件时从 localStorage 字符串重新解析）
+- `apiKeyIndex`：轮询分配游标，每次调用 `getApiKey()` 后递增
+
+---
+
+## 八、技术特性
+
+### 8.1 流式响应（SSE）
+- 对话模式使用 Server-Sent Events 实现流式输出，避免等待完整响应后再渲染的延迟感。
+- 流式读取时逐块解析 SSE 数据帧，实时提取 `choices[0].delta.content` 渲染到 DOM。
+- 同时捕获 `reasoning_content` 实现深度思考的实时展示。
+- 流式请求使用 `AbortController` 进行控制，切换对话或删除消息时中断连接。
+- 中断后 AI 消息标记为 `_incomplete`，保留已收到的内容。
+
+### 8.2 增量 DOM 更新
+- 为避免全量重建 DOM 导致的页面闪烁，应用实现了三个增量更新原语：
+  - `buildMessageNode()`：构建单条消息的 DOM 节点
+  - `insertMessageNode()`：将单条消息追加到消息列表末尾
+  - `updateMessageNode()`：更新单条消息的 bubble 内容
+- 新增消息时使用增量追加；切换对话、模式切换、删除消息对时仍使用全量重建。
+
+### 8.3 Markdown 渲染
+- 对话模式的 AI 回复使用 marked.js（CDN 引入 v4）进行 Markdown 渲染。配置为 `breaks: true`（换行转 `<br>`）和 `gfm: true`（GitHub 风格）。
+- 流式输出过程中实时进行 Markdown 渲染（每收到一个数据块即调用 `marked.parse()` 更新 DOM）。
+- 流结束后最终写入 IndexedDB 并更新一次 DOM。
+- 支持的语法：标题、加粗、斜体、列表、代码行/代码块、引用、表格、链接、分割线、行内代码。
+
+### 8.4 请求体/响应体管理
+- 每条消息的 `apiBodies` 字段记录完整的请求体和响应体 JSON 字符串，方便用户查看和调试。
+- 请求体/响应体代码块默认折叠，点击标题可展开/收起。代码块使用深色背景（`#0d1117`）和等宽字体渲染。
+- AI 消息的请求体/响应体同时显示；用户消息仅显示请求体。
+
+### 8.5 移动端适配
+- 窄屏（≤767px）下侧边栏隐藏，通过菜单按钮（☰）唤出。
+- 侧边栏唤出时显示遮罩层，点击遮罩层或关闭按钮（✕）可关闭侧边栏。
+- 消息气泡、输入框、按钮等在移动端自动调整尺寸。
+
+### 8.6 主题与样式
+- 应用使用 CSS 变量定义颜色方案（`--bg-primary`、`--accent` 等），方便后续扩展深色/浅色主题切换。
+- 当前为深色主题，主色调为蓝色（`#4ea8de`）。
+
+---
+
+## 九、对话模式与图片/视频模式的消息渲染对比
+
+| 维度 | 对话模式 | 图片/视频模式 |
+|------|----------|---------------|
+| 用户消息气泡背景色 | 蓝色（主题色 `var(--accent)`） | 次级背景色（`var(--bg-secondary)`） |
+| AI 消息背景 | 无背景，透出页面底色 | 有 1px 边框，无背景 |
+| 用户消息文字 | 纯文本（不渲染 Markdown） | 纯文本（不渲染 Markdown） |
+| AI 消息文字 | 实时 Markdown 渲染 | 纯文本 |
+| 参考图显示 | 以缩略图行显示 | 以缩略图行显示 |
+| 生成结果展示 | 不适用 | 图片网格或视频播放器 |
+| 用户消息编辑 | 双击进入编辑（隐藏输入区） | 双击进入编辑（隐藏输入区） |
+| 用户消息操作按钮 | 复制提示词 / 删除 / 重新生成 | 复制提示词 / 删除 / 重新生成 |
+| AI 消息操作按钮 | 仅"复制内容"（附字数统计） | 复制图片/视频 URL / 新窗口打开 |
+
+---
+
+## 十、默认参数汇总
+
+| 参数 | 默认值 |
+|------|--------|
+| API Key（单个） | 空（用户必须自行配置） |
+| API Key（多个） | 逗号分隔，系统自动轮询分配 |
+| 生图模型 | Agnes-Image-2.1-Flash |
+| 生图尺寸 | 1024x1024（正方形） |
+| 生图种子 | 空（每次从 1~65536 随机生成） |
+| 生视频模型 | Agnes-Video-V2.0 |
+| 生视频分辨率 | 1152x768（横版） |
+| 生视频帧数 | 121 帧（约 5 秒） |
+| 生视频帧率 | 24 fps |
+| 生视频推理步数 | 空（使用模型默认） |
+| 生视频种子初始值 | 1（可手动修改，留空则自动随机生成） |
+| 对话模型 | Agnes-2.0-Flash |
+| 温度 | 1.0 |
+| 核采样 Top_p | 0.7 |
+| 最大 Token | 8192 |
+| 上下文提交量 | 10 轮 |
+| 深度思考 | 关 |
+| 广告轮次阈值 | 每 5 轮 |
+| 视频轮询间隔 | 10 秒 |
+| 广告倒计时 | 10 秒 |
+| 图片参考图缩放上限 | 1024 像素（超过此值等比缩小） |
+| 拖拽输入区高度下限 | 135px |
+| 拖拽输入区高度上限 | 视口高度 80% |
+| 移动端侧边栏断点 | 767px |
+
+---
+
+*文档版本：v3.3（多 API Key 支持 + 轮询分配 + 文本框替换密码框）*
+*编写日期：2026-06-22*
+*依据源码：`D:\Claw\agnes_app\agnes-ai-chat.html`（3576 行，完整读取）*
